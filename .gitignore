@@ -44,9 +44,12 @@ Thumbs.db
 *.log
 
 # Database
-*.sql
 *.dump
 postgres_data/
+
+# Ignore database backups and exports, but NOT migration files
+backup_*.sql
+export_*.sql
 
 # Logs
 logs/
