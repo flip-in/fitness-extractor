@@ -1,7 +1,12 @@
+import { join } from "node:path";
 import dotenv from "dotenv";
 
 // Load environment variables first, before other imports
-const result = dotenv.config({ path: "../.env" });
+// Assume we're running from backend/ directory, so ../.env is project root
+const envPath = join(process.cwd(), "../.env");
+const result = dotenv.config({ path: envPath });
+
+console.log("Loading .env from:", envPath);
 
 if (result.error) {
 	console.error("Error loading .env file:", result.error);
@@ -19,6 +24,7 @@ if (!process.env.DB_PASSWORD || !process.env.API_KEY) {
 import cors from "cors";
 import express, { type Request, type Response } from "express";
 import { getPool } from "./db/pool.js";
+import syncRoutes from "./routes/sync.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +32,9 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
 app.use(express.json({ limit: "10mb" })); // Parse JSON bodies, limit to 10MB for GPS routes
+
+// Routes
+app.use("/api/sync", syncRoutes);
 
 // Health check endpoint (no auth required)
 app.get("/api/health", async (_req: Request, res: Response) => {

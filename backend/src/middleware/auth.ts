@@ -1,12 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-	console.error("ERROR: API_KEY is not set in environment variables");
-	process.exit(1);
-}
-
 /**
  * Middleware to verify API key authentication
  * Expects API key in X-API-Key header
@@ -16,6 +9,18 @@ export const requireApiKey = (
 	res: Response,
 	next: NextFunction,
 ): void => {
+	const API_KEY = process.env.API_KEY;
+
+	// This should never happen if env vars are loaded correctly in index.ts
+	if (!API_KEY) {
+		console.error("CRITICAL: API_KEY is not set in environment variables");
+		res.status(500).json({
+			error: "Server configuration error",
+			message: "API key not configured",
+		});
+		return;
+	}
+
 	const providedKey = req.headers["x-api-key"];
 
 	if (!providedKey) {
