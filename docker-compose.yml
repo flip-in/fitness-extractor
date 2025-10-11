@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    container_name: fitness-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: fitness
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # TODO: Add migration files when backend is ready
+      # - ./backend/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # TODO: Uncomment when backend is ready
+  # backend:
+  #   build: ./backend
+  #   container_name: fitness-backend
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   environment:
+  #     NODE_ENV: production
+  #     PORT: 3000
+  #     DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/fitness
+  #     API_KEY: ${API_KEY}
+  #     CORS_ORIGIN: ${CORS_ORIGIN}
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./backend/src:/app/src
+  #   restart: unless-stopped
+
+  # TODO: Uncomment when dashboard is ready
+  # dashboard:
+  #   build: ./dashboard
+  #   container_name: fitness-dashboard
+  #   depends_on:
+  #     - backend
+  #   environment:
+  #     VITE_API_URL: ${VITE_API_URL}
+  #     VITE_API_KEY: ${API_KEY}
+  #     VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN}
+  #   ports:
+  #     - "5173:80"
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:
