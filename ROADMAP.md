@@ -13,8 +13,8 @@
 - [x] Project structure setup
 - [x] PostgreSQL database setup with Docker
 - [x] Database schema implementation
-- [ ] Node.js API server setup
-- [ ] API key authentication middleware
+- [x] Node.js API server setup
+- [x] API key authentication middleware
 - [ ] Data ingestion endpoints (workouts, health metrics, activity rings)
 - [ ] Dashboard API endpoints
 - [x] Docker Compose configuration
@@ -108,3 +108,9 @@
 - Database connection tested and verified
 - Database schema migration completed (7 tables: schema_migrations, users, workouts, workout_routes, health_metrics, activity_rings, sync_anchors)
 - 26 indexes created for optimized queries
+- Node.js backend setup with TypeScript
+- Express server running with health check endpoint
+- Database connection pool implemented with lazy initialization
+- API key authentication middleware created
+- Environment variables loaded from project root .env
+- Biome configured for linting and formatting (project-wide)
