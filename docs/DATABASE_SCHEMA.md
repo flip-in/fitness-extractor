@@ -5,6 +5,7 @@
 PostgreSQL database schema optimized for storing time-series fitness data from HealthKit.
 
 **Design Principles:**
+
 - Normalize where it makes sense, denormalize for performance
 - Index on common query patterns
 - Use timestamps with timezone for all time data
@@ -57,6 +58,7 @@ CREATE INDEX idx_users_email ON users(email);
 ```
 
 **Fields:**
+
 - `id` - Primary key, auto-generated UUID
 - `email` - User email (optional for MVP, unique if set)
 - `name` - Display name
@@ -108,6 +110,7 @@ CREATE UNIQUE INDEX idx_workouts_healthkit_uuid ON workouts(healthkit_uuid);
 ```
 
 **Fields:**
+
 - `id` - Primary key, auto-generated UUID
 - `user_id` - Foreign key to users table
 - `healthkit_uuid` - HealthKit's unique identifier (for deduplication)
@@ -127,6 +130,7 @@ CREATE UNIQUE INDEX idx_workouts_healthkit_uuid ON workouts(healthkit_uuid);
 - `updated_at` - Last update timestamp
 
 **HealthKit Workout Types (Common):**
+
 - Running, Walking, Cycling, Swimming
 - FunctionalStrengthTraining, TraditionalStrengthTraining
 - Hiking, Yoga, Dance, Rowing
@@ -162,6 +166,7 @@ CREATE INDEX idx_workout_routes_workout_id ON workout_routes(workout_id);
 ```
 
 **Fields:**
+
 - `id` - Primary key
 - `workout_id` - Foreign key to workouts
 - `route_points` - JSONB array of GPS points with timestamps
@@ -171,6 +176,7 @@ CREATE INDEX idx_workout_routes_workout_id ON workout_routes(workout_id);
 - `created_at` - Record creation timestamp
 
 **Route Point Format (JSONB):**
+
 ```json
 [
   {
@@ -186,6 +192,7 @@ CREATE INDEX idx_workout_routes_workout_id ON workout_routes(workout_id);
 ```
 
 **Why JSONB?**
+
 - Flexible for different GPS point formats
 - Efficient storage and querying
 - Can index specific fields if needed
@@ -227,6 +234,7 @@ CREATE UNIQUE INDEX idx_health_metrics_healthkit_uuid ON health_metrics(healthki
 ```
 
 **Fields:**
+
 - `id` - Primary key
 - `user_id` - Foreign key to users
 - `healthkit_uuid` - HealthKit's unique identifier (for deduplication)
@@ -242,6 +250,7 @@ CREATE UNIQUE INDEX idx_health_metrics_healthkit_uuid ON health_metrics(healthki
 - `created_at` - Record creation timestamp
 
 **Common Metric Types:**
+
 - `heartRate` - Heart rate (bpm)
 - `stepCount` - Steps taken (count)
 - `distanceWalkingRunning` - Distance (meters)
@@ -293,6 +302,7 @@ CREATE INDEX idx_activity_rings_date ON activity_rings(date DESC);
 ```
 
 **Fields:**
+
 - `id` - Primary key
 - `user_id` - Foreign key to users
 - `date` - Date (not timestamp, one record per day)
@@ -333,6 +343,7 @@ CREATE INDEX idx_sync_anchors_user_type ON sync_anchors(user_id, data_type);
 ```
 
 **Fields:**
+
 - `id` - Primary key
 - `user_id` - Foreign key to users
 - `data_type` - Type of data (e.g., "workouts", "heartRate", "activitySummary")
@@ -340,11 +351,13 @@ CREATE INDEX idx_sync_anchors_user_type ON sync_anchors(user_id, data_type);
 - `last_sync_at` - Timestamp of last successful sync
 
 **Purpose:**
+
 - HKAnchoredObjectQuery uses anchors to fetch only new data
 - Prevents re-syncing already uploaded data
 - Each data type has its own anchor
 
 **Data Types:**
+
 - `workouts` - All workouts
 - `heartRate` - Heart rate samples
 - `stepCount` - Step count samples
@@ -482,14 +495,18 @@ For MVP, keep all data indefinitely. Consider adding:
 ## Performance Considerations
 
 ### Indexes
+
 All common query patterns are indexed:
+
 - User-based queries
 - Date range queries
 - Workout type filtering
 - HealthKit UUID lookups (for deduplication)
 
 ### Time-Series Optimization
+
 Consider adding TimescaleDB extension post-MVP:
+
 ```sql
 -- Future: Convert to hypertable
 SELECT create_hypertable('health_metrics', 'start_date');
@@ -497,8 +514,10 @@ SELECT create_hypertable('workouts', 'start_date');
 ```
 
 ### JSONB Performance
+
 - Route points stored as JSONB for flexibility
 - Can add GIN indexes if needed:
+
 ```sql
 CREATE INDEX idx_workout_routes_points ON workout_routes USING GIN (route_points);
 ```
@@ -508,18 +527,22 @@ CREATE INDEX idx_workout_routes_points ON workout_routes USING GIN (route_points
 ## Backup Strategy
 
 ### Automated Backups
+
 Use `pg_dump` for daily backups:
+
 ```bash
 pg_dump -U postgres -d fitness -F c -f backup_$(date +%Y%m%d).dump
 ```
 
 ### What to Backup
+
 - Full database dump daily
 - Keep 7 daily backups
 - Keep 4 weekly backups
 - Keep 12 monthly backups
 
 ### Synology NAS Integration
+
 - Store backups in separate directory on NAS
 - Use Synology's Hyper Backup for redundancy
 
@@ -528,6 +551,7 @@ pg_dump -U postgres -d fitness -F c -f backup_$(date +%Y%m%d).dump
 ## Schema Versioning
 
 ### Migration Strategy
+
 Use a simple migration system:
 
 1. Create `migrations/` directory
@@ -543,6 +567,7 @@ CREATE TABLE schema_migrations (
 ```
 
 ### Initial Migration (001_initial_schema.sql)
+
 Contains all tables defined in this document.
 
 ---
@@ -616,11 +641,13 @@ INSERT INTO activity_rings (
 ## Schema Evolution Notes
 
 ### Adding New Columns
+
 - Always use `ALTER TABLE` for schema changes
 - Add columns as `NULL` first, then backfill
 - Add `NOT NULL` constraint after backfill
 
 ### Adding New Tables
+
 - Follow naming conventions
 - Always include `created_at` timestamp
 - Consider `updated_at` for mutable data
@@ -628,7 +655,9 @@ INSERT INTO activity_rings (
 - Add indexes for foreign keys
 
 ### HealthKit Data Expansion
+
 Schema is flexible for adding new HealthKit data types:
+
 1. Add to `health_metrics` if it's a time-series value
 2. Create new table if it has complex structure
 3. Update `sync_anchors` to track new data type
@@ -638,6 +667,7 @@ Schema is flexible for adding new HealthKit data types:
 ## Summary
 
 This schema provides:
+
 - ✅ All MVP data storage requirements
 - ✅ Efficient querying for common patterns
 - ✅ Deduplication via HealthKit UUIDs

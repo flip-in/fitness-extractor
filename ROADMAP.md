@@ -7,18 +7,19 @@
 ---
 
 ## Phase 1: Backend Foundation
-**Status:** In Progress
+**Status:** Complete
 **Started:** 2025-10-11
+**Completed:** 2025-10-11
 
 - [x] Project structure setup
 - [x] PostgreSQL database setup with Docker
 - [x] Database schema implementation
 - [x] Node.js API server setup
 - [x] API key authentication middleware
-- [ ] Data ingestion endpoints (workouts, health metrics, activity rings)
-- [ ] Dashboard API endpoints
+- [x] Data ingestion endpoints (workouts, health metrics, activity rings, sync anchors)
+- [x] Dashboard API endpoints
 - [x] Docker Compose configuration
-- [ ] Test with mock data
+- [x] Test with mock data
 
 **Target Completion:** Week 1-2
 
@@ -86,7 +87,7 @@
 
 ## Milestones
 
-- [ ] **M1:** Backend can receive and store HealthKit data
+- [x] **M1:** Backend can receive and store HealthKit data
 - [ ] **M2:** iOS app can sync workouts to backend
 - [ ] **M3:** Dashboard displays workout data
 - [ ] **M4:** GPS routes render on map
@@ -114,3 +115,43 @@
 - API key authentication middleware created
 - Environment variables loaded from project root .env
 - Biome configured for linting and formatting (project-wide)
+
+**iOS Data Ingestion Endpoints Implemented:**
+- POST /api/sync/workouts - Syncs workout data with GPS routes, duplicate detection via healthkit_uuid
+- POST /api/sync/health-metrics - Syncs health metrics (heart rate, steps, body mass, etc.)
+- POST /api/sync/activity-rings - Upserts daily activity ring data (Move, Exercise, Stand)
+- POST /api/sync/anchors - Updates sync anchors for incremental HealthKit sync
+- GET /api/sync/anchors/:userId/:dataType - Retrieves latest sync anchor
+
+**Testing Completed:**
+- Workouts: 1 workout with route data inserted, duplicate handling verified
+- Health Metrics: 3 metrics synced (HeartRate, StepCount, BodyMass)
+- Activity Rings: 2 days inserted, update functionality verified
+- Sync Anchors: 3 anchors created, 1 updated, GET endpoint verified with 404 handling
+
+**Code Quality:**
+- All endpoints use transactions for data integrity
+- Duplicate detection via ON CONFLICT clauses
+- Proper error handling and status codes (200, 207, 400, 404, 500)
+- TypeScript strict mode with full type safety
+- All code passes Biome linting
+
+**Milestone Reached:** M1 - Backend can receive and store HealthKit data ✅
+
+**Dashboard API Endpoints Implemented:**
+- GET /api/dashboard/recent - Returns recent workouts, activity rings, and summary stats (7-90 days)
+- GET /api/workout/:id - Returns detailed workout information
+- GET /api/workout/:id/route - Returns GPS route data with bounding box for Mapbox
+- GET /api/activity-rings/:date - Returns activity rings for a specific date
+- GET /api/health-metrics/:metricType - Returns health metrics by type with date range filtering
+
+**Dashboard Testing Completed:**
+- Recent dashboard endpoint tested with 7-day and 90-day ranges
+- Workout detail endpoint returns full workout data
+- Route endpoint properly returns 404 when no route data exists
+- Activity rings endpoint returns data for specific dates
+- Health metrics endpoint filters by type and date range
+- All endpoints properly authenticated with API key
+- Query parameter validation working (days 1-90, date formats)
+
+**Phase 1 Complete:** All backend endpoints implemented, tested, and ready for iOS app and web dashboard integration.

@@ -24,7 +24,11 @@ if (!process.env.DB_PASSWORD || !process.env.API_KEY) {
 import cors from "cors";
 import express, { type Request, type Response } from "express";
 import { getPool } from "./db/pool.js";
+import activityRingsRoutes from "./routes/activityRings.js";
+import dashboardRoutes from "./routes/dashboard.js";
+import healthMetricsRoutes from "./routes/healthMetrics.js";
 import syncRoutes from "./routes/sync.js";
+import workoutRoutes from "./routes/workout.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +39,10 @@ app.use(express.json({ limit: "10mb" })); // Parse JSON bodies, limit to 10MB fo
 
 // Routes
 app.use("/api/sync", syncRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/workout", workoutRoutes);
+app.use("/api/activity-rings", activityRingsRoutes);
+app.use("/api/health-metrics", healthMetricsRoutes);
 
 // Health check endpoint (no auth required)
 app.get("/api/health", async (_req: Request, res: Response) => {

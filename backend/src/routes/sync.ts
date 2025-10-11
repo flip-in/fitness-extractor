@@ -1,5 +1,11 @@
 import express from "express";
-import { syncWorkouts } from "../controllers/syncController.js";
+import {
+	getAnchor,
+	syncActivityRings,
+	syncHealthMetrics,
+	syncWorkouts,
+	updateSyncAnchors,
+} from "../controllers/syncController.js";
 import { requireApiKey } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -9,10 +15,9 @@ router.use(requireApiKey);
 
 // Sync endpoints
 router.post("/workouts", syncWorkouts);
-// TODO: Add other sync endpoints
-// router.post("/health-metrics", syncHealthMetrics);
-// router.post("/activity-rings", syncActivityRings);
-// router.post("/anchors", syncAnchors);
-// router.get("/anchors/:userId/:dataType", getAnchor);
+router.post("/health-metrics", syncHealthMetrics);
+router.post("/activity-rings", syncActivityRings);
+router.post("/anchors", updateSyncAnchors);
+router.get("/anchors/:userId/:dataType", getAnchor);
 
 export default router;
