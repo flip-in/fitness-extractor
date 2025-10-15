@@ -33,6 +33,9 @@ ios/.DS_Store
 ios/Pods/
 ios/Podfile.lock
 
+# iOS Configuration (contains sensitive data)
+ios/**/Config.swift
+
 # IDEs
 .vscode/
 .idea/
