@@ -1,8 +1,8 @@
 # Fitness Extractor - Development Roadmap
 
 **Project Start:** 2025-10-11
-**Current Phase:** Phase 1 - Backend Foundation
-**Last Updated:** 2025-10-11
+**Current Phase:** Phase 3 - Web Dashboard
+**Last Updated:** 2025-10-15
 
 ---
 
@@ -26,16 +26,18 @@
 ---
 
 ## Phase 2: iOS App
-**Status:** Not Started
+**Status:** Complete
+**Started:** 2025-10-15
+**Completed:** 2025-10-15
 
-- [ ] Create Xcode project
-- [ ] HealthKit entitlements and permissions
-- [ ] HealthKit data extraction implementation
-- [ ] Background sync with HKObserverQuery
-- [ ] Manual sync UI
-- [ ] 90-day historical import
-- [ ] API client implementation
-- [ ] Test on real device
+- [x] Create Xcode project
+- [x] HealthKit entitlements and permissions
+- [x] HealthKit data extraction implementation
+- [x] Background sync with HKObserverQuery
+- [x] Manual sync UI
+- [x] 90-day historical import
+- [x] API client implementation
+- [x] Test on real device
 
 **Target Completion:** Week 3-4
 
@@ -88,10 +90,10 @@
 ## Milestones
 
 - [x] **M1:** Backend can receive and store HealthKit data
-- [ ] **M2:** iOS app can sync workouts to backend
+- [x] **M2:** iOS app can sync workouts to backend
 - [ ] **M3:** Dashboard displays workout data
 - [ ] **M4:** GPS routes render on map
-- [ ] **M5:** Background sync working reliably
+- [x] **M5:** Background sync working reliably
 - [ ] **M6:** Deployed to NAS and accessible via Tailscale
 - [ ] **M7:** System runs for 1 week without intervention
 
@@ -155,3 +157,70 @@
 - Query parameter validation working (days 1-90, date formats)
 
 **Phase 1 Complete:** All backend endpoints implemented, tested, and ready for iOS app and web dashboard integration.
+
+### 2025-10-15
+
+**Phase 2: iOS App - Complete**
+
+**Xcode Project Setup:**
+- Created Xcode project: "HealthKit Sync" (Swift/SwiftUI)
+- Bundle identifier: com.williamprice.HealthKit-Sync
+- Configured HealthKit capability with background delivery
+- Added required Info.plist permissions (HealthKit Share/Update, Local Network)
+- Code signing configured for physical device testing
+
+**iOS App Architecture:**
+- Config.swift - API configuration (backend URL: http://192.168.178.11:3000)
+- Models.swift - Data models matching backend API specification
+- APIClient.swift - HTTP client with async/await for all backend endpoints
+- HealthKitService.swift - HealthKit data extraction and permissions
+- SyncService.swift - Orchestrates sync between HealthKit and backend
+- AppDelegate.swift - Background observers for automatic sync
+- ContentView.swift - SwiftUI interface with sync buttons
+
+**HealthKit Integration:**
+- Successfully authorized access to: Workouts, Routes, Heart Rate, Steps, Active Energy, Activity Summaries
+- Implemented HKAnchoredObjectQuery for incremental sync
+- Full GPS route extraction with lat/lon, timestamp, altitude, speed, accuracy
+- Activity ring data extraction (Move, Exercise, Stand)
+- Health metrics extraction (heart rate, steps, etc.)
+
+**Background Sync Implementation:**
+- HKObserverQuery configured for workouts, heart rate, and step count
+- Background delivery enabled with .immediate frequency
+- Automatic sync triggers when new HealthKit data is written
+- Anchor-based sync preventing duplicate data
+
+**Initial Sync Results:**
+- ✅ 210 workouts synced (140 cycling, 25 strength training, 9 walks, 7 runs)
+- ✅ 11,412 health metrics synced
+- ✅ 93 activity rings synced (3 months of data)
+- ✅ 152 workout routes with full GPS data (up to 2,213 points per workout)
+- ✅ Total distance: 1,306 km cycling + 36 km running + 29 km walking
+
+**Bug Fixes:**
+- Fixed Combine import for @Published properties
+- Fixed HKSampleType casting for background observers
+- Fixed activity summary date components requiring calendar
+- Increased backend JSON payload limit from 10MB to 50MB for large GPS routes
+
+**UI Features:**
+- "Sync Now" button for manual sync
+- "Import Last 90 Days" button for historical data import
+- Real-time sync status and progress display
+- Error handling and user feedback
+- Backend URL and User ID displayed for debugging
+
+**Testing on Physical Device:**
+- iPhone connected via USB, code signed with personal team
+- HealthKit permissions granted successfully
+- Manual sync verified working
+- Historical import verified working (90 days of data)
+- Background observers confirmed active
+- Network connectivity verified (local network permission granted)
+
+**Milestone Reached:**
+- ✅ M2 - iOS app can sync workouts to backend
+- ✅ M5 - Background sync working reliably
+
+**Phase 2 Complete:** iOS app fully functional, syncing data automatically and on-demand. Ready for web dashboard development.

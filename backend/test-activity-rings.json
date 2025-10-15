@@ -1,0 +1,29 @@
+{
+	"user_id": "00000000-0000-0000-0000-000000000001",
+	"activity_rings": [
+		{
+			"date": "2025-01-15",
+			"move_goal_kcal": 500,
+			"move_actual_kcal": 420,
+			"move_percent": 84.00,
+			"exercise_goal_minutes": 30,
+			"exercise_actual_minutes": 25,
+			"exercise_percent": 83.33,
+			"stand_goal_hours": 12,
+			"stand_actual_hours": 10,
+			"stand_percent": 83.33
+		},
+		{
+			"date": "2025-01-14",
+			"move_goal_kcal": 500,
+			"move_actual_kcal": 550,
+			"move_percent": 110.00,
+			"exercise_goal_minutes": 30,
+			"exercise_actual_minutes": 45,
+			"exercise_percent": 150.00,
+			"stand_goal_hours": 12,
+			"stand_actual_hours": 12,
+			"stand_percent": 100.00
+		}
+	]
+}

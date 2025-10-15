@@ -1,0 +1,17 @@
+{
+	"user_id": "00000000-0000-0000-0000-000000000001",
+	"anchors": [
+		{
+			"data_type": "HKWorkout",
+			"anchor_data": "QkFORDpfX3N0ZGxpYl9fX19fNDgzMjU4OTQ3ODMyNTg5Nw=="
+		},
+		{
+			"data_type": "HKQuantityTypeIdentifierHeartRate",
+			"anchor_data": "UkVDT1JEOl9fYW5jaG9yX18yMzg0NzU4OTM0Nzg1OTM0"
+		},
+		{
+			"data_type": "HKQuantityTypeIdentifierStepCount",
+			"anchor_data": "U1RFUEM6X19kYXRhX19fNDU5Mzg3NDU5ODM3NDU5ODM="
+		}
+	]
+}

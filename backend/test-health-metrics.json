@@ -1,0 +1,35 @@
+{
+	"user_id": "00000000-0000-0000-0000-000000000001",
+	"metrics": [
+		{
+			"healthkit_uuid": "HK-METRIC-UUID-TEST-001",
+			"metric_type": "HeartRate",
+			"value": 72,
+			"unit": "bpm",
+			"start_date": "2025-01-15T10:00:00Z",
+			"end_date": "2025-01-15T10:00:00Z",
+			"source_name": "Apple Watch",
+			"device_name": "Apple Watch Series 9"
+		},
+		{
+			"healthkit_uuid": "HK-METRIC-UUID-TEST-002",
+			"metric_type": "StepCount",
+			"value": 1250,
+			"unit": "count",
+			"start_date": "2025-01-15T10:00:00Z",
+			"end_date": "2025-01-15T11:00:00Z",
+			"source_name": "iPhone",
+			"device_name": "iPhone 15 Pro"
+		},
+		{
+			"healthkit_uuid": "HK-METRIC-UUID-TEST-003",
+			"metric_type": "BodyMass",
+			"value": 75.5,
+			"unit": "kg",
+			"start_date": "2025-01-15T08:00:00Z",
+			"end_date": "2025-01-15T08:00:00Z",
+			"source_name": "Health App",
+			"device_name": "iPhone 15 Pro"
+		}
+	]
+}

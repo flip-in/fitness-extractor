@@ -35,7 +35,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
-app.use(express.json({ limit: "10mb" })); // Parse JSON bodies, limit to 10MB for GPS routes
+app.use(express.json({ limit: "50mb" })); // Parse JSON bodies, limit to 50MB for GPS routes
 
 // Routes
 app.use("/api/sync", syncRoutes);
