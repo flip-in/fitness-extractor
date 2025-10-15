@@ -25,6 +25,10 @@ ios/DerivedData/
 ios/Build/
 ios/*.xcodeproj/xcuserdata/
 ios/*.xcworkspace/xcuserdata/
+ios/*/*.xcodeproj/xcuserdata/
+ios/*/*.xcodeproj/*/xcuserdata/
+ios/*/*.xcodeproj/*/*.xcuserdata/
+*.xcuserstate
 ios/.DS_Store
 ios/Pods/
 ios/Podfile.lock
