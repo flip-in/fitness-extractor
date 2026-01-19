@@ -2,7 +2,7 @@
 
 **Project Start:** 2025-10-11
 **Current Phase:** Phase 3 - Web Dashboard
-**Last Updated:** 2025-10-15
+**Last Updated:** 2025-10-16
 
 ---
 
@@ -44,7 +44,8 @@
 ---
 
 ## Phase 3: Web Dashboard
-**Status:** Not Started
+**Status:** In Progress
+**Started:** 2025-10-16
 
 - [ ] React + Vite project setup
 - [ ] Layout and navigation
@@ -84,6 +85,24 @@
 - [ ] Documentation updates
 
 **Target Completion:** Ongoing
+
+---
+
+## Optional Future Enhancements
+**Status:** Backlog (Post-MVP)
+
+### iOS App Improvements
+- [ ] **Sleep Tracking**: Add explicit sleep category tracking (HKCategoryTypeSleep) for sleep stages, bed time, wake time
+- [ ] **Background App Refresh**: Implement UIApplication background app refresh for more reliable workout sync
+- [ ] **Local Notifications**: Daily reminders to open app for sync
+
+### Additional Features
+- [ ] Multi-user support
+- [ ] Data export functionality
+- [ ] Advanced analytics and insights
+- [ ] Social features / activity sharing
+
+**Note:** Current implementation successfully syncs health metrics (heart rate, steps) automatically. Workouts require opening the app, which is acceptable for personal use. Optional enhancements can be prioritized based on real-world usage patterns.
 
 ---
 
@@ -224,3 +243,26 @@
 - ✅ M5 - Background sync working reliably
 
 **Phase 2 Complete:** iOS app fully functional, syncing data automatically and on-demand. Ready for web dashboard development.
+
+### 2025-10-16
+
+**Background Sync Verification (Overnight Testing):**
+- Tested background sync overnight without opening app
+- ✅ Heart rate observer: Synced 240 measurements automatically (16:56 → 06:35, ~12 hours)
+- ✅ Step count observer: Synced 26 measurements automatically
+- ✅ Activity rings: Today's data synced automatically at 06:42
+- ❌ Workout observer: Requires opening app (iOS prioritization)
+
+**Background Sync Behavior Findings:**
+- HKObserverQuery with `.immediate` frequency working as expected for health metrics
+- iOS prioritizes heart rate/step count observers over workout observers
+- Manual sync confirmed working (tested walk workout synced successfully)
+- Acceptable for personal use: health metrics sync passively, open app after workouts
+
+**Optional Enhancements Section Added:**
+- Sleep tracking (HKCategoryTypeSleep)
+- Background App Refresh for more reliable workout sync
+- Local notifications
+- Documented as post-MVP backlog items
+
+**Starting Phase 3:** Web Dashboard development

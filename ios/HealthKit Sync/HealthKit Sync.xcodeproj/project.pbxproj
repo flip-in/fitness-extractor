@@ -10,9 +10,22 @@
 		5F6D44AB2E9FD7B600F9F378 /* HealthKit Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HealthKit Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		5F71C1EC2EAE276100F14FC5 /* Exceptions for "HealthKit Sync" folder in "HealthKit Sync" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Config.example.swift,
+			);
+			target = 5F6D44AA2E9FD7B600F9F378 /* HealthKit Sync */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		5F6D44AD2E9FD7B600F9F378 /* HealthKit Sync */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				5F71C1EC2EAE276100F14FC5 /* Exceptions for "HealthKit Sync" folder in "HealthKit Sync" target */,
+			);
 			path = "HealthKit Sync";
 			sourceTree = "<group>";
 		};
