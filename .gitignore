@@ -10,6 +10,7 @@ yarn-debug.log*
 yarn-error.log*
 package-lock.json
 yarn.lock
+.pnpm-store/
 
 # Backend
 backend/dist/

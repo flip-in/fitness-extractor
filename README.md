@@ -25,7 +25,8 @@ This system consists of three components:
 
 - **macOS** with Xcode 15+ (for iOS app development)
 - **Docker** (for PostgreSQL database)
-- **Node.js** 24.9.0+ (for backend)
+- **Node.js** 24.9.0+ with corepack enabled (for backend)
+- **pnpm** (auto-installed via corepack)
 - **iPhone** with iOS 17+ (HealthKit requires physical device)
 
 ### 1. Clone and Setup
@@ -33,6 +34,8 @@ This system consists of three components:
 ```bash
 git clone <your-repo-url>
 cd fitness-extractor
+corepack enable  # enables pnpm via packageManager field
+pnpm install     # installs all workspace dependencies
 ```
 
 ### 2. Configure Environment
@@ -71,9 +74,7 @@ docker exec fitness-db psql -U postgres -c "SELECT NOW();"
 ### 4. Start Backend Server
 
 ```bash
-cd backend
-npm install
-npm run dev
+pnpm dev:backend
 ```
 
 Backend will run on `http://localhost:3000`
@@ -180,9 +181,8 @@ See `ROADMAP.md` for detailed progress.
 
 ### Backend
 ```bash
-cd backend
-npm run lint      # Check code quality
-npm run build     # Compile TypeScript
+pnpm lint         # Check code quality
+pnpm build        # Compile TypeScript
 ```
 
 ### Test Data

@@ -1,0 +1,15 @@
+{
+  "name": "fitness-extractor",
+  "private": true,
+  "scripts": {
+    "dev:backend": "pnpm --filter fitness-extractor-backend dev",
+    "dev:dashboard": "pnpm --filter dashboard dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r lint:fix"
+  },
+  "packageManager": "pnpm@10.6.1",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
