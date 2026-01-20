@@ -177,6 +177,34 @@ See `docs/DATABASE_SCHEMA.md` for complete schema documentation.
 
 See `ROADMAP.md` for detailed progress.
 
+## Git Worktrees
+
+For parallel development:
+
+```bash
+# Auto-generate name (e.g., swift_fix_1430)
+./scripts/create-worktree.sh
+
+# With custom name
+./scripts/create-worktree.sh my-feature
+
+# From specific base branch
+./scripts/create-worktree.sh my-feature main
+```
+
+Creates worktree at `../fitness-extractor-{name}/` with:
+- New branch with same name
+- `.env` copied from main repo
+- Dependencies installed via pnpm
+
+To remove:
+```bash
+git worktree remove ../fitness-extractor-{name}
+git branch -D {name}
+```
+
+Or use Claude Code: `/worktree [name] [base-branch]`
+
 ## Testing
 
 ### Backend
