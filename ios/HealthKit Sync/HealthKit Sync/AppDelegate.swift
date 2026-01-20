@@ -37,6 +37,16 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             setupObserver(for: stepCount, dataType: "stepCount")
         }
 
+        // Observer for active energy burned (move ring)
+        if let activeEnergy = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
+            setupObserver(for: activeEnergy, dataType: "activeEnergyBurned")
+        }
+
+        // Observer for stand hours (stand ring)
+        if let standHour = HKObjectType.categoryType(forIdentifier: .appleStandHour) {
+            setupObserver(for: standHour, dataType: "appleStandHour")
+        }
+
         // Note: Activity summaries don't support background observers
         // They are synced during manual/scheduled syncs instead
 
