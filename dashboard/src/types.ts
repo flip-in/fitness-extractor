@@ -28,6 +28,7 @@ export interface SummaryStats {
   total_distance_km: number;
   total_calories: number;
   avg_workout_duration_minutes: number;
+  avg_heart_rate_bpm: number | null;
 }
 
 export interface DashboardResponse {

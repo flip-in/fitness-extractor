@@ -95,7 +95,10 @@ class HealthKitService {
                         // Fetch route if available
                         let route = try? await self.fetchWorkoutRoute(for: workout)
 
-                        let workoutData = self.convertWorkoutToData(workout, route: route)
+                        // Fetch heart rate statistics for workout
+                        let heartRateStats = try? await self.fetchHeartRateStats(for: workout)
+
+                        let workoutData = self.convertWorkoutToData(workout, route: route, heartRateStats: heartRateStats)
                         workoutDataArray.append(workoutData)
                     }
 
@@ -107,7 +110,7 @@ class HealthKitService {
         }
     }
 
-    private func convertWorkoutToData(_ workout: HKWorkout, route: WorkoutRoute?) -> WorkoutData {
+    private func convertWorkoutToData(_ workout: HKWorkout, route: WorkoutRoute?, heartRateStats: (avg: Double?, max: Double?)? = nil) -> WorkoutData {
         let iso8601Formatter = ISO8601DateFormatter()
         iso8601Formatter.formatOptions = [.withInternetDateTime]
 
@@ -119,14 +122,57 @@ class HealthKitService {
             durationSeconds: Int(workout.duration),
             totalDistanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
             totalEnergyBurnedKcal: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
-            avgHeartRateBpm: nil, // Would need separate query for heart rate during workout
-            maxHeartRateBpm: nil,
+            avgHeartRateBpm: heartRateStats?.avg.map { Int($0) },
+            maxHeartRateBpm: heartRateStats?.max.map { Int($0) },
             sourceName: workout.sourceRevision.source.name,
             sourceBundleId: workout.sourceRevision.source.bundleIdentifier,
             deviceName: workout.device?.name,
             metadata: workout.metadata?.mapValues { "\($0)" },
             route: route
         )
+    }
+
+    // MARK: - Heart Rate Statistics for Workout
+
+    private func fetchHeartRateStats(for workout: HKWorkout) async throws -> (avg: Double?, max: Double?) {
+        guard let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            return (nil, nil)
+        }
+
+        let predicate = HKQuery.predicateForSamples(
+            withStart: workout.startDate,
+            end: workout.endDate,
+            options: .strictStartDate
+        )
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: heartRateType,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let samples = samples as? [HKQuantitySample], !samples.isEmpty else {
+                    continuation.resume(returning: (nil, nil))
+                    return
+                }
+
+                let unit = HKUnit.count().unitDivided(by: .minute())
+                let heartRates = samples.map { $0.quantity.doubleValue(for: unit) }
+
+                let avg = heartRates.reduce(0, +) / Double(heartRates.count)
+                let max = heartRates.max()
+
+                continuation.resume(returning: (avg, max))
+            }
+
+            self.healthStore.execute(query)
+        }
     }
 
     // MARK: - Workout Routes

@@ -32,6 +32,7 @@ export interface DashboardSummary {
 	total_distance_km: number;
 	total_calories: number;
 	avg_workout_duration_minutes: number;
+	avg_heart_rate_bpm: number | null;
 }
 
 export interface WorkoutDetail {
@@ -150,7 +151,8 @@ export async function calculateSummaryStats(
 			COUNT(*) as total_workouts,
 			COALESCE(SUM(total_distance_meters), 0) / 1000.0 as total_distance_km,
 			COALESCE(SUM(total_energy_burned_kcal), 0) as total_calories,
-			COALESCE(AVG(duration_seconds), 0) / 60.0 as avg_workout_duration_minutes
+			COALESCE(AVG(duration_seconds), 0) / 60.0 as avg_workout_duration_minutes,
+			AVG(avg_heart_rate_bpm) as avg_heart_rate_bpm
 		FROM workouts
 		WHERE user_id = $1
 		AND start_date >= NOW() - INTERVAL '1 day' * $2
@@ -166,6 +168,9 @@ export async function calculateSummaryStats(
 		avg_workout_duration_minutes: Number.parseFloat(
 			row.avg_workout_duration_minutes,
 		),
+		avg_heart_rate_bpm: row.avg_heart_rate_bpm
+			? Number.parseFloat(row.avg_heart_rate_bpm)
+			: null,
 	};
 }
 

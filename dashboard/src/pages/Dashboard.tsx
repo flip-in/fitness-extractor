@@ -213,7 +213,9 @@ export function Dashboard() {
               </div>
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <div className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
-                  {null ? `${Math.round(null)} bpm` : "N/A"}
+                  {data.summary.avg_heart_rate_bpm
+                    ? `${Math.round(data.summary.avg_heart_rate_bpm)} bpm`
+                    : "N/A"}
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-400">Avg HR</div>
               </div>
