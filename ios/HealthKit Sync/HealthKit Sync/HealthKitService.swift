@@ -359,6 +359,7 @@ extension HKWorkoutActivityType {
         case .rowing: return "Rowing"
         case .stairClimbing: return "StairClimbing"
         case .dance: return "Dance"
+        case .surfingSports: return "Surfing"
         default: return "Other"
         }
     }
