@@ -86,25 +86,36 @@ export function Dashboard() {
     return type.replace(/([A-Z])/g, " $1").trim();
   };
 
-  const formatDate = (dateString: string) => {
+  const getTimezone = (metadata: Record<string, unknown> | null | undefined) =>
+    metadata?.HKTimeZone as string | undefined;
+
+  const formatDate = (dateString: string, timezone?: string | null) => {
     const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
+    const options: Intl.DateTimeFormatOptions = {
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-    }).format(date);
+    };
+    if (timezone) {
+      options.timeZone = timezone;
+    }
+    return new Intl.DateTimeFormat("en-US", options).format(date);
   };
 
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = (dateString: string, timezone?: string | null) => {
     const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
+    const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
       month: "long",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-    }).format(date);
+    };
+    if (timezone) {
+      options.timeZone = timezone;
+    }
+    return new Intl.DateTimeFormat("en-US", options).format(date);
   };
 
   if (loading) {
@@ -241,7 +252,7 @@ export function Dashboard() {
                         {formatWorkoutType(workout.workout_type)}
                       </h3>
                       <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {formatDate(workout.start_date)}
+                        {formatDate(workout.start_date, getTimezone(workout.metadata))}
                       </span>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
@@ -290,7 +301,7 @@ export function Dashboard() {
                   {formatWorkoutType(selectedWorkout.workout_type)}
                 </h2>
                 <p className="text-gray-600 dark:text-gray-400">
-                  {formatDateTime(selectedWorkout.start_date)}
+                  {formatDateTime(selectedWorkout.start_date, getTimezone(selectedWorkout.metadata))}
                 </p>
               </div>
               <button

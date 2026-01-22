@@ -12,6 +12,7 @@ export interface WorkoutSummary {
 	avg_heart_rate_bpm: number | null;
 	max_heart_rate_bpm: number | null;
 	has_route: boolean;
+	metadata: Record<string, unknown> | null;
 }
 
 export interface ActivityRing {
@@ -97,7 +98,8 @@ export async function getRecentWorkouts(
 			w.total_energy_burned_kcal,
 			w.avg_heart_rate_bpm,
 			w.max_heart_rate_bpm,
-			EXISTS(SELECT 1 FROM workout_routes wr WHERE wr.workout_id = w.id) as has_route
+			EXISTS(SELECT 1 FROM workout_routes wr WHERE wr.workout_id = w.id) as has_route,
+			w.metadata
 		FROM workouts w
 		WHERE w.user_id = $1
 		AND w.start_date >= NOW() - INTERVAL '1 day' * $2
