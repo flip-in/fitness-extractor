@@ -124,7 +124,7 @@ export function Dashboard() {
           <button
             type="button"
             onClick={loadDashboard}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition cursor-pointer"
           >
             Retry
           </button>
@@ -152,7 +152,7 @@ export function Dashboard() {
           <div className="flex gap-2">
             <button
               type="button"
-              className={`px-4 py-2 rounded-lg font-medium transition ${
+              className={`px-4 py-2 rounded-lg font-medium transition cursor-pointer ${
                 days === 7
                   ? "bg-blue-600 text-white"
                   : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -163,7 +163,7 @@ export function Dashboard() {
             </button>
             <button
               type="button"
-              className={`px-4 py-2 rounded-lg font-medium transition ${
+              className={`px-4 py-2 rounded-lg font-medium transition cursor-pointer ${
                 days === 30
                   ? "bg-blue-600 text-white"
                   : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -174,7 +174,7 @@ export function Dashboard() {
             </button>
             <button
               type="button"
-              className={`px-4 py-2 rounded-lg font-medium transition ${
+              className={`px-4 py-2 rounded-lg font-medium transition cursor-pointer ${
                 days === 90
                   ? "bg-blue-600 text-white"
                   : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -234,7 +234,7 @@ export function Dashboard() {
                     key={workout.id}
                     type="button"
                     onClick={() => loadWorkoutDetails(workout.id)}
-                    className="w-full text-left bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition p-4"
+                    className="w-full text-left bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition p-4 cursor-pointer"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -296,7 +296,7 @@ export function Dashboard() {
               <button
                 type="button"
                 onClick={closeWorkoutDetails}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl cursor-pointer"
               >
                 ×
               </button>
