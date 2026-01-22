@@ -21,14 +21,14 @@ fi
 BACKEND_PORT=$(find_port 3000)
 DASHBOARD_PORT=$(find_port 5173)
 
-echo "Backend API: http://localhost:$BACKEND_PORT"
 echo "Dashboard: http://localhost:$DASHBOARD_PORT"
+echo "Backend API: http://localhost:$BACKEND_PORT"
 
-# Backend in background
-PORT=$BACKEND_PORT CORS_ORIGIN=http://localhost:$DASHBOARD_PORT pnpm dev:backend &
+# Dashboard in background
+VITE_API_URL=http://localhost:$BACKEND_PORT VITE_API_KEY=$API_KEY pnpm --filter dashboard exec vite --port $DASHBOARD_PORT &
 
-# Give backend a moment to start
-sleep 1
+# Give dashboard a moment to start and print URL
+sleep 2
 
-# Dashboard in foreground
-VITE_API_URL=http://localhost:$BACKEND_PORT VITE_API_KEY=$API_KEY pnpm --filter dashboard exec vite --port $DASHBOARD_PORT
+# Backend in foreground
+PORT=$BACKEND_PORT CORS_ORIGIN=http://localhost:$DASHBOARD_PORT pnpm dev:backend
