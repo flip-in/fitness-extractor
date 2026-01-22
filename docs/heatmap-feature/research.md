@@ -1,7 +1,44 @@
 # Heatmap Feature Research
 
 ## Goal
-Display cycling activities in Amsterdam as a heatmap to visualize route frequency/density at a glance.
+Full-screen world map centered on user's location showing all GPS-enabled workouts as a heatmap. Split-panel layout with workout list for navigation.
+
+---
+
+## User Experience Vision
+
+### Layout
+```
+┌─────────────────────────────────────┬──────────────────┐
+│                                     │  Recent Workouts │
+│                                     │  ──────────────  │
+│           FULL-SCREEN MAP           │  🚴 Cycling 12km │
+│        (heatmap + routes)           │  🏃 Run 5km      │
+│                                     │  🚴 Cycling 8km  │
+│     [user location marker]          │  ...             │
+│                                     │                  │
+└─────────────────────────────────────┴──────────────────┘
+```
+
+### Behavior
+1. **Initial Load**: Map centers on browser geolocation (fallback: Amsterdam or last workout)
+2. **Heatmap Layer**: All GPS workouts rendered as density heatmap, color-coded by activity type
+3. **Workout List**: Scrollable sidebar with recent workouts (has_route = true only)
+4. **Click Workout**: Map pans/zooms to workout bounds, highlights that route as a line overlay
+5. **Explore**: User can pan/zoom freely, heatmap populates across the world
+
+### Color Coding by Activity Type
+- 🚴 **Cycling**: Orange/Red gradient
+- 🏃 **Running**: Blue/Purple gradient
+- 🚶 **Walking/Hiking**: Green gradient
+- Other: Gray/neutral
+
+### Route Highlight on Selection
+When user clicks a workout in the list:
+1. Smooth pan/zoom to workout bounding box
+2. Render selected route as bright line on top of heatmap
+3. Show start/end markers
+4. Dim or maintain heatmap underneath
 
 ---
 
@@ -114,56 +151,131 @@ Process GPS data offline into vector tiles using Tippecanoe, host on Mapbox.
 
 ## Recommended Approach
 
-**Start with Option A (Mapbox Heatmap Layer)** because:
+**Option A (Mapbox Heatmap Layer)** with multi-layer architecture:
 1. Already have Mapbox GL JS 3.15.0
 2. Native support, no external tools
 3. Good performance with clustering
-4. Can enhance later (Option C) if needed
+4. Multiple heatmap layers for activity type color coding
+5. Additional line layer for selected route highlight
 
 ### Implementation Plan
 
 #### Backend
-1. New endpoint: `GET /api/heatmap/data`
-   - Query params: `days`, `workout_type`
-   - Returns: GeoJSON FeatureCollection of points from all matching routes
-   - Consider: sampling/decimation for large datasets
 
-2. Query pattern:
-```sql
-SELECT wr.route_points
-FROM workout_routes wr
-JOIN workouts w ON wr.workout_id = w.id
-WHERE w.user_id = $1
-  AND w.workout_type = 'Cycling'
-  AND w.start_date >= NOW() - INTERVAL '$2 days';
+**1. Heatmap Data Endpoint**
+```
+GET /api/heatmap/points
+```
+Returns all GPS points from all workouts with routes, grouped by activity type.
+
+Response:
+```typescript
+interface HeatmapResponse {
+  points: {
+    workout_type: string;
+    data: GeoJSON.FeatureCollection<GeoJSON.Point>;
+  }[];
+  workouts: WorkoutSummary[];  // For sidebar list
+}
 ```
 
+Query:
+```sql
+SELECT
+  w.id, w.workout_type, w.start_date, w.duration_seconds,
+  w.total_distance_meters, wr.route_points,
+  wr.min_latitude, wr.max_latitude, wr.min_longitude, wr.max_longitude
+FROM workouts w
+JOIN workout_routes wr ON w.id = wr.workout_id
+WHERE w.user_id = $1
+ORDER BY w.start_date DESC;
+```
+
+**2. Single Route Endpoint** (already exists)
+```
+GET /api/workout/:id/route
+```
+Used when user clicks workout to show highlighted route.
+
 #### Frontend
-1. New component: `HeatmapView.tsx`
-2. Add to dashboard (new tab/section or separate page)
-3. Mapbox heatmap layer config:
+
+**New Page: `/heatmap` or `/map`**
 
 ```typescript
+// HeatmapPage.tsx structure
+export function HeatmapPage() {
+  const [workouts, setWorkouts] = useState<WorkoutSummary[]>([]);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
+  const [selectedWorkout, setSelectedWorkout] = useState<string | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<WorkoutRoute | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+
+  // On mount: get user location, load heatmap data
+  // On workout click: fetch route, pan map, show highlight
+}
+```
+
+**Map Layers (bottom to top):**
+1. Base map (dark style)
+2. Cycling heatmap layer (orange/red)
+3. Running heatmap layer (blue/purple)
+4. Walking heatmap layer (green)
+5. Selected route line layer (bright white/yellow)
+6. Start/end markers for selected route
+
+**Heatmap Layer Config (per activity type):**
+```typescript
+// Cycling layer example
 map.addLayer({
-  id: 'cycling-heat',
+  id: 'heat-cycling',
   type: 'heatmap',
-  source: 'cycling-points',
+  source: 'points-cycling',
   paint: {
     'heatmap-weight': 1,
     'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
     'heatmap-color': [
       'interpolate', ['linear'], ['heatmap-density'],
-      0, 'rgba(0,0,255,0)',
-      0.2, 'rgb(0,255,255)',
-      0.4, 'rgb(0,255,0)',
-      0.6, 'rgb(255,255,0)',
-      0.8, 'rgb(255,128,0)',
-      1, 'rgb(255,0,0)'
+      0, 'rgba(255,140,0,0)',      // transparent
+      0.2, 'rgba(255,140,0,0.4)',  // orange
+      0.4, 'rgba(255,100,0,0.6)',
+      0.6, 'rgba(255,60,0,0.8)',
+      0.8, 'rgba(255,30,0,0.9)',
+      1, 'rgba(255,0,0,1)'         // red
     ],
     'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 15, 20],
     'heatmap-opacity': 0.8
   }
 });
+```
+
+**Selected Route Highlight:**
+```typescript
+map.addLayer({
+  id: 'selected-route',
+  type: 'line',
+  source: 'selected-route-source',
+  paint: {
+    'line-color': '#ffffff',
+    'line-width': 4,
+    'line-opacity': 1
+  }
+});
+```
+
+**Geolocation:**
+```typescript
+navigator.geolocation.getCurrentPosition(
+  (pos) => {
+    map.flyTo({
+      center: [pos.coords.longitude, pos.coords.latitude],
+      zoom: 12
+    });
+  },
+  () => {
+    // Fallback: center on most recent workout or Amsterdam
+    map.flyTo({ center: [4.9041, 52.3676], zoom: 11 });
+  }
+);
 ```
 
 ---
@@ -209,22 +321,45 @@ map.addLayer({
 
 ---
 
-## UI/UX Considerations
+## UI/UX Details
 
-### Placement Options
-1. **New "Heatmap" tab** on dashboard
-2. **Toggle on existing map** (if we add a main map view)
-3. **Separate page** (`/heatmap`)
+### Page Layout
+- **Full viewport height** (no scrolling on page itself)
+- **Map**: 70-75% width, full height
+- **Sidebar**: 25-30% width, full height, scrollable workout list
 
-### Controls
-- Time range selector (7/30/90/365 days, all time)
-- Activity type filter (Cycling, Running, etc.)
-- Opacity/intensity slider (optional)
+### Sidebar (Workout List)
+```typescript
+interface WorkoutListItem {
+  id: string;
+  workout_type: string;
+  start_date: string;
+  duration_seconds: number;
+  total_distance_meters: number | null;
+  // Computed from route bounding box for pan target
+  center: [number, number];
+  bounds: [[number, number], [number, number]];
+}
+```
 
-### Amsterdam-Specific
-- Default bounds to Amsterdam area
-- Consider dark map style for better heatmap visibility
-- Style: `mapbox://styles/mapbox/dark-v11`
+Display:
+- Activity icon (🚴🏃🚶)
+- Date/time
+- Distance (km)
+- Duration
+- Click to select → highlight in list + pan map
+
+### Map Controls
+- Zoom +/- buttons
+- "My Location" button (re-center on geolocation)
+- Activity type toggles (show/hide cycling, running, etc.)
+
+### Dark Map Style
+Use `mapbox://styles/mapbox/dark-v11` for better heatmap contrast.
+
+### Responsive Considerations
+- Mobile: sidebar collapses to bottom sheet or toggle
+- Desktop: side-by-side layout
 
 ---
 
@@ -254,8 +389,8 @@ Free tier includes:
 
 ## Unresolved Questions
 
-1. **Point sampling rate?** - Every point vs every Nth vs Douglas-Peucker?
-2. **Time range default?** - All time might be too heavy initially
-3. **Include other activity types?** - Start cycling-only or multi-sport?
-4. **Show routes on click?** - Interactive heatmap or static visualization?
-5. **Dark mode map style?** - Better heatmap visibility vs current outdoors style?
+1. **Point sampling rate?** Every point vs every Nth vs Douglas-Peucker?
+2. **Pagination for workout list?** Load all or infinite scroll?
+3. **Activity type layer blending?** Separate layers (current plan) or combine with different weights?
+4. **Mobile layout?** Bottom sheet vs hamburger menu for workout list?
+5. **Cache heatmap data?** LocalStorage/IndexedDB for faster reload?
