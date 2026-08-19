@@ -35,8 +35,10 @@ Then re-import from the iOS app. **Two gotchas:**
   (`SyncService.swift:232-255`). A stale anchor against an empty DB syncs nothing and looks
   broken. Historical import passes `anchor: nil` (`SyncService.swift:103`) and bypasses this.
 - **90 days is not enough.** `Config.swift:28` has `historicalImportDays = 90`, which today
-  only reaches back to May 2026. Original data started Oct 2025 — bump to `~330` before
-  importing to recover the full history, then set it back.
+  only reaches back to May 2026. The wiped DB held data from roughly **mid-July 2025** — the
+  Oct 2025 import was itself a 90-day window — so ~400 days is needed to match it, and more to
+  go further. Set the constant past your earliest HealthKit workout rather than to a fixed
+  number, import, then put it back to 90 so routine use stays cheap.
 
 ### 2. API key was rotated (2026-08-19)
 
@@ -45,11 +47,22 @@ live. New key is in `.env` and `ios/.../Config.swift`. `SESSION_HANDOVER.md` del
 The dead string remains in git history — harmless, but don't reuse it.
 DB password rotated at the same time (local dev only).
 
+**The iPhone still has the old key compiled in.** `Config.swift` was edited on disk, but the
+installed app was built from the old value and will get `401`s until rebuilt and redeployed
+from Xcode. Do that before troubleshooting any sync failure.
+
 ### 3. Worktree shell scripts removed
 
 `scripts/create-worktree.sh` and `scripts/worktree-setup.sh` are gone, replaced by Claude Code's
 worktree tooling. `scripts/dev-server.sh` (auto-port-finding dev launcher) is still there and
 still the way to run things.
+
+### Still unverified
+
+`docs/MVP_ARCHITECTURE.md`, `docs/DATABASE_SCHEMA.md` and `docs/API_SPECIFICATION.md` are all
+untouched since 2025-10-11 and were **not** checked against the code during the 2026-08-19
+cleanup. Endpoint paths in the two READMEs *were* verified against `backend/src/index.ts`.
+Treat the `docs/` trio as probably-stale until confirmed.
 
 ---
 

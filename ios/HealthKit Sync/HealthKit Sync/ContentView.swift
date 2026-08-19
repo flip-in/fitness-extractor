@@ -88,7 +88,7 @@ struct ContentView: View {
                     }) {
                         HStack {
                             Image(systemName: "clock.arrow.circlepath")
-                            Text("Import Last 90 Days")
+                            Text("Import Last \(Config.historicalImportDays) Days")
                                 .fontWeight(.semibold)
                         }
                         .frame(maxWidth: .infinity)

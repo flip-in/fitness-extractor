@@ -109,6 +109,9 @@ static let historicalImportDays = 90               // raise to backfill further
 
 Then connect the iPhone, select it as the destination, ⌘R, and grant HealthKit permissions.
 
+Changing `apiKey` requires a rebuild — the installed app keeps the value it was compiled with
+and will return `401` until redeployed.
+
 ### 6. Import data
 
 Tap **Import Last N Days** in the app.
