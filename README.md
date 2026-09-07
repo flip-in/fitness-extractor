@@ -84,12 +84,21 @@ docker exec fitness-db psql -U postgres -d fitness -c "\dt"
 This finds free ports (from 3000 and 5173), wires `CORS_ORIGIN` and `VITE_API_URL` to match, and
 runs both. Handy when several worktrees are running at once. It prints both URLs on startup.
 
-Individually, if preferred:
+**Use this rather than starting the two halves separately.** The backend allows exactly one CORS
+origin, so if the dashboard lands on a different port than `CORS_ORIGIN` names, every API call
+fails in the browser with "Failed to fetch" while `curl` still works. `dev-server.sh` keeps the
+two in sync; starting them by hand does not.
+
+If you do run them separately, pass matching values yourself:
 
 ```bash
-pnpm dev:backend     # :3000
-pnpm dev:dashboard   # :5173
+CORS_ORIGIN=http://localhost:5173 pnpm dev:backend
+pnpm dev:dashboard   # must actually serve on 5173
 ```
+
+The dashboard reads `VITE_API_URL` and `VITE_API_KEY` from the **root** `.env` — `vite.config.ts`
+sets `envDir: '..'`. There is no `dashboard/src/config.ts`; configuration is env-var only. Use
+`pnpm`, not `npm` — this is a pnpm workspace.
 
 ### 5. Configure the iOS app
 
