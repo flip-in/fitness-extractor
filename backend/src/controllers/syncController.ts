@@ -340,7 +340,10 @@ export async function updateSyncAnchors(
  * GET /api/sync/anchors/:userId/:dataType
  * Get the latest sync anchor for a specific data type
  */
-export async function getAnchor(req: Request, res: Response): Promise<void> {
+export async function getAnchor(
+	req: Request<{ userId: string; dataType: string }>,
+	res: Response,
+): Promise<void> {
 	try {
 		const { userId, dataType } = req.params;
 

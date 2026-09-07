@@ -66,7 +66,7 @@ export async function getRecentDashboardData(
  * Get detailed workout information
  */
 export async function getWorkoutDetails(
-	req: Request,
+	req: Request<{ id: string }>,
 	res: Response,
 ): Promise<void> {
 	try {
@@ -109,7 +109,7 @@ export async function getWorkoutDetails(
  * Get GPS route data for a workout
  */
 export async function getWorkoutRouteData(
-	req: Request,
+	req: Request<{ id: string }>,
 	res: Response,
 ): Promise<void> {
 	try {
@@ -152,7 +152,7 @@ export async function getWorkoutRouteData(
  * Get activity rings for a specific date
  */
 export async function getActivityRingsByDateHandler(
-	req: Request,
+	req: Request<{ date: string }>,
 	res: Response,
 ): Promise<void> {
 	try {
@@ -206,7 +206,7 @@ export async function getActivityRingsByDateHandler(
  * Get health metrics of a specific type within a date range
  */
 export async function getHealthMetrics(
-	req: Request,
+	req: Request<{ metricType: string }>,
 	res: Response,
 ): Promise<void> {
 	try {

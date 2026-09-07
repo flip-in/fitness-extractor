@@ -135,8 +135,10 @@ class ApiClient {
 		let url = `/api/health-metrics/${metricType}`;
 		const params = new URLSearchParams();
 
-		if (startDate) params.append("startDate", startDate);
-		if (endDate) params.append("endDate", endDate);
+		// snake_case: the backend reads req.query.start_date / end_date and 400s
+		// without them.
+		if (startDate) params.append("start_date", startDate);
+		if (endDate) params.append("end_date", endDate);
 
 		const queryString = params.toString();
 		if (queryString) {

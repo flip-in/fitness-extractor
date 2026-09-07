@@ -10,6 +10,9 @@
   },
   "packageManager": "pnpm@10.6.1",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": ["esbuild"],
+    "overrides": {
+      "qs": ">=6.16.0"
+    }
   }
 }
