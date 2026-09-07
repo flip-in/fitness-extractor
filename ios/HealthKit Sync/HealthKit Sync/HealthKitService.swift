@@ -41,6 +41,13 @@ class HealthKitService {
             types.insert(activeEnergyBurned)
         }
 
+        // Stand hours. Required for the appleStandHour background observer in
+        // AppDelegate — an observer on a type absent from this set fails with
+        // "Authorization not determined", since the app never asked for it.
+        if let standHour = HKObjectType.categoryType(forIdentifier: .appleStandHour) {
+            types.insert(standHour)
+        }
+
         // Activity summary
         types.insert(HKObjectType.activitySummaryType())
 
@@ -98,7 +105,7 @@ class HealthKitService {
                         // Fetch heart rate statistics for workout
                         let heartRateStats = try? await self.fetchHeartRateStats(for: workout)
 
-                        let workoutData = self.convertWorkoutToData(workout, route: route, heartRateStats: heartRateStats)
+                        let workoutData = await self.convertWorkoutToData(workout, route: route, heartRateStats: heartRateStats)
                         workoutDataArray.append(workoutData)
                     }
 

@@ -107,32 +107,103 @@ class APIClient {
         }
     }
 
+    // MARK: - Batching
+
+    /// Splits items into batches whose combined encoded size stays under `maxBytes`.
+    /// Workout payloads embed full GPS routes, so a long historical import sent as a
+    /// single request will exceed the backend's body limit and be rejected with a 413.
+    private static func batched<T: Encodable>(
+        _ items: [T],
+        maxBytes: Int,
+        encoder: JSONEncoder
+    ) throws -> [[T]] {
+        var batches: [[T]] = []
+        var current: [T] = []
+        var currentBytes = 0
+
+        for item in items {
+            let itemBytes = try encoder.encode(item).count
+
+            if !current.isEmpty && currentBytes + itemBytes > maxBytes {
+                batches.append(current)
+                current = []
+                currentBytes = 0
+            }
+
+            current.append(item)
+            currentBytes += itemBytes
+        }
+
+        if !current.isEmpty {
+            batches.append(current)
+        }
+
+        return batches
+    }
+
+    /// Sends batches sequentially, combining the per-batch responses so callers see
+    /// totals for the whole sync. Re-running is safe: the backend dedupes on
+    /// healthkit_uuid, so a partially-completed sync resumes cleanly.
+    private func sendBatches<T>(
+        _ batches: [[T]],
+        label: String,
+        encode: ([T]) throws -> Data,
+        send: (Data) async throws -> SyncResponse
+    ) async throws -> SyncResponse {
+        var success = true
+        var synced = 0
+        var skipped = 0
+        var updated = 0
+        var errors: [SyncError] = []
+
+        for (index, batch) in batches.enumerated() {
+            if Config.debugLogging && batches.count > 1 {
+                print("📦 Sending \(label) batch \(index + 1)/\(batches.count) (\(batch.count) items)")
+            }
+
+            let body = try encode(batch)
+            let response = try await send(body)
+
+            success = success && response.success
+            synced += response.synced ?? 0
+            skipped += response.skipped ?? 0
+            updated += response.updated ?? 0
+            errors.append(contentsOf: response.errors ?? [])
+        }
+
+        return SyncResponse(
+            success: success,
+            synced: synced,
+            skipped: skipped,
+            updated: updated,
+            errors: errors
+        )
+    }
+
     // MARK: - Workout Endpoints
 
     func syncWorkouts(_ workouts: [WorkoutData]) async throws -> SyncResponse {
-        let request = WorkoutSyncRequest(userId: Config.userId, workouts: workouts)
         let encoder = JSONEncoder()
-        let body = try encoder.encode(request)
+        let batches = try Self.batched(workouts, maxBytes: Config.maxSyncBatchBytes, encoder: encoder)
 
-        return try await makeRequest(
-            endpoint: "/api/sync/workouts",
-            method: "POST",
-            body: body
-        )
+        return try await sendBatches(batches, label: "workouts") { batch in
+            try encoder.encode(WorkoutSyncRequest(userId: Config.userId, workouts: batch))
+        } send: { body in
+            try await self.makeRequest(endpoint: "/api/sync/workouts", method: "POST", body: body)
+        }
     }
 
     // MARK: - Health Metrics Endpoints
 
     func syncHealthMetrics(_ metrics: [HealthMetricData]) async throws -> SyncResponse {
-        let request = HealthMetricSyncRequest(userId: Config.userId, metrics: metrics)
         let encoder = JSONEncoder()
-        let body = try encoder.encode(request)
+        let batches = try Self.batched(metrics, maxBytes: Config.maxSyncBatchBytes, encoder: encoder)
 
-        return try await makeRequest(
-            endpoint: "/api/sync/health-metrics",
-            method: "POST",
-            body: body
-        )
+        return try await sendBatches(batches, label: "health metrics") { batch in
+            try encoder.encode(HealthMetricSyncRequest(userId: Config.userId, metrics: batch))
+        } send: { body in
+            try await self.makeRequest(endpoint: "/api/sync/health-metrics", method: "POST", body: body)
+        }
     }
 
     // MARK: - Activity Rings Endpoints

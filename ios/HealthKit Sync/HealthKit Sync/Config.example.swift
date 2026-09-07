@@ -24,8 +24,14 @@ struct Config {
 
     // MARK: - Sync Configuration
 
-    /// Number of days of historical data to import on first sync
+    /// Number of days of historical data to import on first sync.
+    /// Raise temporarily to backfill further, then set back.
     static let historicalImportDays = 90
+
+    /// Max encoded size of a single sync request body. Sync payloads are split
+    /// into batches under this size — a large import embeds full GPS routes and
+    /// will otherwise exceed the backend's 50MB body limit in one request.
+    static let maxSyncBatchBytes = 8 * 1024 * 1024
 
     /// Whether to enable debug logging
     static let debugLogging = true

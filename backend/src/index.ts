@@ -22,7 +22,11 @@ if (!process.env.DB_PASSWORD || !process.env.API_KEY) {
 }
 
 import cors from "cors";
-import express, { type Request, type Response } from "express";
+import express, {
+	type NextFunction,
+	type Request,
+	type Response,
+} from "express";
 import { getPool } from "./db/pool.js";
 import activityRingsRoutes from "./routes/activityRings.js";
 import dashboardRoutes from "./routes/dashboard.js";
@@ -35,6 +39,21 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
+
+// Request logging. Sits before the body parser so oversized payloads are still
+// logged with their size when express.json rejects them with a 413.
+app.use((req: Request, res: Response, next: NextFunction) => {
+	const bytes = Number(req.headers["content-length"] ?? 0);
+	const size = bytes > 0 ? ` ${(bytes / 1024 / 1024).toFixed(2)}MB` : "";
+	const started = Date.now();
+	res.on("finish", () => {
+		console.log(
+			`${req.method} ${req.originalUrl} → ${res.statusCode}${size} ${Date.now() - started}ms`,
+		);
+	});
+	next();
+});
+
 app.use(express.json({ limit: "50mb" })); // Parse JSON bodies, limit to 50MB for GPS routes
 
 // Routes
