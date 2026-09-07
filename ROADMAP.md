@@ -11,11 +11,15 @@
 
 Read this first. Three things changed while the project sat idle.
 
-### 1. The database is gone
+### 1. New computer — the database never existed here
 
-No `fitness-db` container, no `postgres:16` image, no `postgres_data` volume. All prior data
-(210 workouts, ~11k health metrics, 152 GPS routes) is unrecoverable locally. HealthKit on the
-iPhone is still the source of truth.
+Work moved to a new Mac. The repo came across; Docker images/volumes and the Xcode account did
+not. So there's no `fitness-db` container, no `postgres:16` image, no `postgres_data` volume,
+and Xcode has no signing identity.
+
+Nothing was lost that matters: the old DB only ever held a 90-day window imported in Oct 2025,
+and HealthKit on the iPhone is the source of truth for all of it. A fresh import is strictly
+better than restoring the old volume would have been — no reason to chase the old machine.
 
 To rebuild:
 
