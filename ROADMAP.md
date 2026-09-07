@@ -21,7 +21,11 @@ Nothing was lost that matters: the old DB only ever held a 90-day window importe
 and HealthKit on the iPhone is the source of truth for all of it. A fresh import is strictly
 better than restoring the old volume would have been — no reason to chase the old machine.
 
-To rebuild:
+**Rebuilt 2026-09-07.** 653 workouts (303 in 2025, 350 in 2026), 433 GPS routes, 401 activity
+rings, 217k health metrics, spanning 2025-08-04 → 2026-09-07 — the full 400-day window. Dashboard
+verified serving it.
+
+To rebuild again from scratch:
 
 ```bash
 docker compose up -d db
@@ -38,11 +42,12 @@ Then re-import from the iOS app. **Two gotchas:**
 - **Use "Import Last N Days", not "Sync Now".** Sync anchors are cached in iOS `UserDefaults`
   (`SyncService.swift:232-255`). A stale anchor against an empty DB syncs nothing and looks
   broken. Historical import passes `anchor: nil` (`SyncService.swift:103`) and bypasses this.
-- **90 days is not enough.** `Config.swift:28` has `historicalImportDays = 90`, which today
-  only reaches back to May 2026. The wiped DB held data from roughly **mid-July 2025** — the
-  Oct 2025 import was itself a 90-day window — so ~400 days is needed to match it, and more to
-  go further. Set the constant past your earliest HealthKit workout rather than to a fixed
-  number, import, then put it back to 90 so routine use stays cheap.
+- **Raise `historicalImportDays` first.** `Config.swift` defaults to 90. Set it past your
+  earliest HealthKit workout, import, then put it back so routine syncs stay cheap. HealthKit
+  holds years, so the window is the only limit on how far back you get.
+- **Don't judge coverage until the import finishes.** Workouts arrive newest-first across many
+  batches, so a mid-import query looks exactly like a device with no older data. Wait for the
+  activity-rings POST — it's the last step — before concluding anything is missing.
 
 ### 2. API key was rotated (2026-08-19)
 
