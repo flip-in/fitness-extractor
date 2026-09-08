@@ -228,8 +228,10 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
    - Anchor + start-date predicate were combined; with an anchor the predicate is dropped. The
      old query excluded samples whose start time predates the last sync, i.e. everything the watch
      delivers late (most of a workout's HR series). Anchor-only now.
-   - Deferred: `HKObjectQueryNoLimit` still materialises the whole backlog after prolonged POST
-     failures (page it).
+   - ~~Deferred: `HKObjectQueryNoLimit` still materialises the whole backlog~~ — paged 2026-09-08:
+     `syncMetricType` fetches `metricPageSize` (5000) per anchored query, POSTs, saves the anchor,
+     repeats until a short page or the wake budget runs out (the 47k-row AppleExerciseTime POST
+     that morning was the trigger). Workouts fetch is still unbounded (metadata only, small).
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended

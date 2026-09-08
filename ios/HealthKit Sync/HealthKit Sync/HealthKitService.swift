@@ -304,7 +304,12 @@ class HealthKitService {
     /// exists it alone defines "new": combining it with a start-date predicate
     /// dropped samples the watch delivered late, i.e. with a start time before
     /// the previous sync — most of a workout's heart-rate series arrives that way.
-    func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, from startDate: Date, anchor: HKQueryAnchor? = nil) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
+    ///
+    /// `limit` caps one page; the returned anchor sits after the last sample
+    /// delivered, so the caller pages by re-fetching until a short page comes
+    /// back. Unbounded, a backlog after days of failed POSTs was materialised in
+    /// one go (47k AppleExerciseTime rows on 2026-09-08).
+    func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, from startDate: Date, anchor: HKQueryAnchor? = nil, limit: Int = HKObjectQueryNoLimit) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
         return try await withCheckedThrowingContinuation { continuation in
             let predicate = anchor == nil
                 ? HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
@@ -314,7 +319,7 @@ class HealthKitService {
                 type: entry.quantityType,
                 predicate: predicate,
                 anchor: anchor,
-                limit: HKObjectQueryNoLimit
+                limit: limit
             ) { _, samples, _, newAnchor, error in
                 if let error = error {
                     continuation.resume(throwing: error)

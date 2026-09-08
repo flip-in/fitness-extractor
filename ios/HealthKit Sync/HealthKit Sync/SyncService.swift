@@ -38,6 +38,11 @@ class SyncService: ObservableObject {
     /// peak memory stays a handful of small sample arrays.
     private static let metricConcurrency = 4
 
+    /// Samples per anchored fetch + POST. Query latency in the background is
+    /// 1–7s regardless of size, so pages only matter for a backlog; 5000 rows
+    /// is ~3.5 days of per-minute samples and a few hundred KB per POST.
+    private static let metricPageSize = 5000
+
     /// Pre-table anchor keys (2025-10 → 2026-09). Read once as a fallback so the
     /// first run after upgrading doesn't re-fetch HR/steps from `lastSyncDate`.
     private let legacyAnchorKeys: [HKQuantityTypeIdentifier: String] = [
@@ -316,7 +321,7 @@ class SyncService: ObservableObject {
     ///
     /// A type with no anchor yet (newly added to the table) starts from
     /// `lastSyncDate`: forward-only. History for new types is ROADMAP step 4.
-    private func syncHealthMetrics(_ entries: [HealthMetricTypes.Entry], shouldContinue: () -> Bool) async throws {
+    private func syncHealthMetrics(_ entries: [HealthMetricTypes.Entry], shouldContinue: @escaping () -> Bool) async throws {
         let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
 
         var firstError: Error?
@@ -330,7 +335,7 @@ class SyncService: ObservableObject {
                 for entry in chunk {
                     group.addTask { @MainActor in
                         do {
-                            try await self.syncMetricType(entry, from: startDate)
+                            try await self.syncMetricType(entry, from: startDate, shouldContinue: shouldContinue)
                             return (entry.identifier.rawValue, nil)
                         } catch {
                             return (entry.identifier.rawValue, error)
@@ -356,17 +361,39 @@ class SyncService: ObservableObject {
         }
     }
 
-    private func syncMetricType(_ entry: HealthMetricTypes.Entry, from startDate: Date) async throws {
-        let anchor = loadAnchor(forKey: entry.anchorKey)
+    /// Pages through the backlog `metricPageSize` samples at a time, persisting
+    /// the anchor after each page lands, so a partial pass (budget spent, crash,
+    /// network drop) keeps what it already shipped and resumes where it stopped.
+    private func syncMetricType(_ entry: HealthMetricTypes.Entry, from startDate: Date, shouldContinue: @escaping () -> Bool) async throws {
+        var anchor = loadAnchor(forKey: entry.anchorKey)
             ?? legacyAnchorKeys[entry.identifier].flatMap { loadAnchor(forKey: $0) }
 
-        let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(entry, from: startDate, anchor: anchor)
+        var page = 0
+        repeat {
+            page += 1
+            let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(
+                entry, from: startDate, anchor: anchor, limit: Self.metricPageSize
+            )
+            try await postMetrics(metrics, for: entry, page: page)
+            if let newAnchor = newAnchor {
+                saveAnchor(newAnchor, forKey: entry.anchorKey)
+            }
+            anchor = newAnchor
+            // Short page = caught up. No anchor = can't page safely; stop too.
+            guard metrics.count == Self.metricPageSize, newAnchor != nil else { return }
+        } while shouldContinue()
 
+        if Config.debugLogging {
+            logSync("⏱️ \(entry.identifier.rawValue): backlog continues after \(page) pages; resumes next wake")
+        }
+    }
+
+    private func postMetrics(_ metrics: [HealthMetricData], for entry: HealthMetricTypes.Entry, page: Int) async throws {
         if !metrics.isEmpty {
             let response = try await api.syncHealthMetrics(metrics)
 
             if Config.debugLogging {
-                logSync("📊 \(entry.identifier.rawValue): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                logSync("📊 \(entry.identifier.rawValue)\(page > 1 ? " p\(page)" : ""): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
             }
 
             // HTTP 207 = some rows failed; it isn't an error to the client,
@@ -378,12 +405,8 @@ class SyncService: ObservableObject {
                 ])
             }
         }
-
-        // Only after the backend has every row: a failure above leaves
-        // the old anchor so the samples are re-fetched next time.
-        if let newAnchor = newAnchor {
-            saveAnchor(newAnchor, forKey: entry.anchorKey)
-        }
+        // Returning normally is the "backend has every row of this page" signal;
+        // the caller then advances the anchor. A throw above leaves it put.
     }
 
     private func syncActivityRings() async throws {
