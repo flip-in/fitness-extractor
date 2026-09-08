@@ -3,9 +3,8 @@
 **Started:** 2025-10-11
 **Last active:** 2026-01-22
 **Resumed:** 2026-08-19
-**Current state:** Backend + iOS + dashboard all working; 1100-day history imported locally.
-Background-only sync design landed 2026-09-08 (needs a device rebuild to take effect). Next:
-NAS deployment (spec in `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`), then heatmap.
+**Current state:** Deployed on the NAS (ceres) 2026-09-08 with the full 1100-day history; phone
+points at it; background-only sync build installed. Remaining Phase 4 chores below, then heatmap.
 
 ---
 
@@ -165,9 +164,11 @@ empty DB; rollback path, backup script, initdb + seed user all exercised on the 
 - [x] Dockerfile, `.dockerignore`, `docker-compose.nas.yml`, env-only backend config, SPA serving
 - [x] `scripts/deploy.sh`, `scripts/nas/receive-deploy.sh`, `scripts/nas/backup.sh`
 - [x] `002_seed_user.sql`; NAS bootstrap; first deploy; backup dry run
+- [x] Phone cutover 2026-09-08: `apiBaseURL` → NAS, ATS exception for plain HTTP on 100.x,
+  1100-day import → NAS holds 1343 workouts / 944 routes / 1.69M points / 845 rings (matches
+  laptop). Smoke 14/14. Observers already delivering metrics to the NAS in background.
 - [ ] DSM Task Scheduler: daily 03:00, user Oberon, `bash /volume2/docker/fitness-extractor/backup.sh`, email on error
-- [ ] Phone cutover: `apiBaseURL = "http://100.121.150.120:3000"`, import 1100 days once, back to 90
-- [ ] Verify §3.5: row counts, off-LAN dashboard, overnight route backfill, restore drill
+- [ ] Verify §3.5 remainder: off-LAN dashboard, overnight route backfill (`pendingRoutes` → 0), restore drill
 - [ ] Browser homepage → `http://100.121.150.120:3000`
 - [ ] Optional: Hyper Backup → the backups folder
 - [ ] Deploy to Synology NAS via Docker Compose
@@ -222,5 +223,5 @@ sidebar pagination, layer blending, mobile layout, client-side caching.
 - [x] M3 Dashboard displays workouts
 - [x] M4 GPS routes render on map
 - [x] M5 Background sync working (health metrics)
-- [ ] M6 Deployed to NAS via Tailscale
+- [x] M6 Deployed to NAS via Tailscale — 2026-09-08
 - [ ] M7 Runs a week unattended
