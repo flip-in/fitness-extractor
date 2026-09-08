@@ -236,6 +236,10 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      within 6h (`RouteBackfillQueue.freshWindow`; end dates persisted alongside the queue) has
      its route fetched right after rings, before metrics. Entries queued before this build
      have no end date and stay on the nightly path.
+   - **`print` → `os.Logger`** (2026-09-08, `Log.swift`, `logSync(_:)`): all 34 app log lines now
+     land in the unified log at notice level, public privacy, so `log collect` archives show the
+     app's own sync narrative (type synced, route attached/dropped, nightly task ran) next to
+     HealthKit's query lines. Predicate unchanged: `process == "HealthKit Sync"`.
    New types start **forward-only** from `lastSyncDate` — see step 4. HealthKit prompts for the
    new read types the next time the app calls `requestAuthorization` (one-time grant).
    Observers unchanged (HR/steps/energy/stand/workouts) — every wake syncs all 44 types anyway.
