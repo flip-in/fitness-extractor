@@ -2,6 +2,7 @@ import express from "express";
 import {
 	getWorkoutDetails,
 	getWorkoutRouteData,
+	setWorkoutFavoriteFlag,
 } from "../controllers/dashboardController.js";
 import { requireApiKey } from "../middleware/auth.js";
 
@@ -13,5 +14,6 @@ router.use(requireApiKey);
 // Workout endpoints
 router.get("/:id", getWorkoutDetails);
 router.get("/:id/route", getWorkoutRouteData);
+router.put("/:id/favorite", setWorkoutFavoriteFlag);
 
 export default router;

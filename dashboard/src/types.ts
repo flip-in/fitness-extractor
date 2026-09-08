@@ -8,6 +8,7 @@ export interface WorkoutSummary {
 	duration_seconds: number;
 	total_distance_meters: number | null;
 	has_route: boolean;
+	is_favorite: boolean;
 	metadata: Record<string, unknown> | null;
 }
 

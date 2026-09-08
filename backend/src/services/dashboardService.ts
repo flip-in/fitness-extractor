@@ -12,6 +12,7 @@ export interface WorkoutSummary {
 	avg_heart_rate_bpm: number | null;
 	max_heart_rate_bpm: number | null;
 	has_route: boolean;
+	is_favorite: boolean;
 	metadata: Record<string, unknown> | null;
 }
 
@@ -99,8 +100,10 @@ export async function getRecentWorkouts(
 			w.avg_heart_rate_bpm,
 			w.max_heart_rate_bpm,
 			EXISTS(SELECT 1 FROM workout_routes wr WHERE wr.workout_id = w.id) as has_route,
+			COALESCE(a.is_favorite, false) as is_favorite,
 			w.metadata
 		FROM workouts w
+		LEFT JOIN workout_annotations a ON a.healthkit_uuid = w.healthkit_uuid
 		WHERE w.user_id = $1
 		AND w.start_date >= NOW() - INTERVAL '1 day' * $2
 		ORDER BY w.start_date DESC
@@ -108,6 +111,32 @@ export async function getRecentWorkouts(
 
 	const result = await pool.query(query, [userId, days]);
 	return result.rows;
+}
+
+/**
+ * Set or clear the favorite flag on a workout. Annotations are keyed on the
+ * HealthKit UUID (see migrations/003) so the workout row is looked up first.
+ * Returns null when the workout does not exist.
+ */
+export async function setWorkoutFavorite(
+	pool: Pool,
+	workoutId: string,
+	isFavorite: boolean,
+): Promise<{ id: string; is_favorite: boolean } | null> {
+	const query = `
+		INSERT INTO workout_annotations (healthkit_uuid, is_favorite, favorited_at)
+		SELECT healthkit_uuid, $2, CASE WHEN $2 THEN NOW() END
+		FROM workouts WHERE id = $1
+		ON CONFLICT (healthkit_uuid) DO UPDATE SET
+			is_favorite = EXCLUDED.is_favorite,
+			favorited_at = EXCLUDED.favorited_at,
+			updated_at = NOW()
+		RETURNING is_favorite
+	`;
+
+	const result = await pool.query(query, [workoutId, isFavorite]);
+	if (result.rows.length === 0) return null;
+	return { id: workoutId, is_favorite: result.rows[0].is_favorite };
 }
 
 /**

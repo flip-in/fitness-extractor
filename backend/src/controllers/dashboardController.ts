@@ -8,6 +8,7 @@ import {
 	getRecentWorkouts,
 	getWorkoutById,
 	getWorkoutRoute,
+	setWorkoutFavorite,
 } from "../services/dashboardService.js";
 
 // Default user ID for MVP (single user)
@@ -100,6 +101,46 @@ export async function getWorkoutDetails(
 		res.status(500).json({
 			error: "Internal Server Error",
 			message: "Failed to fetch workout details",
+		});
+	}
+}
+
+/**
+ * PUT /api/workout/:id/favorite  body: { is_favorite: boolean }
+ * Set or clear the favorite flag. Idempotent.
+ */
+export async function setWorkoutFavoriteFlag(
+	req: Request<{ id: string }>,
+	res: Response,
+): Promise<void> {
+	try {
+		const { id } = req.params;
+		const isFavorite = req.body?.is_favorite;
+
+		if (!id || typeof isFavorite !== "boolean") {
+			res.status(400).json({
+				error: "Bad Request",
+				message: "workout id and boolean is_favorite are required",
+			});
+			return;
+		}
+
+		const result = await setWorkoutFavorite(getPool(), id, isFavorite);
+
+		if (!result) {
+			res.status(404).json({
+				success: false,
+				message: "Workout not found",
+			});
+			return;
+		}
+
+		res.status(200).json({ success: true, data: result });
+	} catch (error) {
+		console.error("Error in setWorkoutFavoriteFlag:", error);
+		res.status(500).json({
+			error: "Internal Server Error",
+			message: "Failed to update favorite",
 		});
 	}
 }

@@ -90,6 +90,16 @@ class ApiClient {
 		return this.request<WorkoutDetail>(`/api/workout/${id}`);
 	}
 
+	async setWorkoutFavorite(
+		id: string,
+		isFavorite: boolean,
+	): Promise<{ id: string; is_favorite: boolean }> {
+		return this.request(`/api/workout/${id}/favorite`, {
+			method: "PUT",
+			body: JSON.stringify({ is_favorite: isFavorite }),
+		});
+	}
+
 	async getWorkoutRoute(id: string): Promise<WorkoutRoute> {
 		const response = await this.request<RawWorkoutRoute>(
 			`/api/workout/${id}/route`,

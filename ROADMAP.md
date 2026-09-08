@@ -143,6 +143,13 @@ blowing the background memory budget; addressed 2026-09-08 (see top). Verify on 
 - [x] Activity rings component
 - [x] API client integration (`api.ts`)
 - [x] Styling and polish — click-to-open workout modal, click-outside-to-close, cursor affordances
+- [x] **Favorites** (2026-09-08): heart on each card + "♥ Favorites" filter (client-side, within
+  the selected day range). `PUT /api/workout/:id/favorite {is_favorite}`. Stored in the new
+  `workout_annotations` table (`003_workout_annotations.sql`), keyed on `healthkit_uuid` with
+  **no FK** so a wipe + re-import keeps them; future tags/notes/immich photo links go there too.
+  Migration is additive but NOT auto-applied on the NAS (initdb only runs on a fresh volume):
+  `docker exec -i fitness-db psql -U postgres -d fitness < migrations/003_workout_annotations.sql`
+  before deploying.
 - [ ] **Dockerize dashboard** — the one outstanding item
 
 **Note:** `react-router-dom` is installed but unused. Either wire it up (needed for the heatmap
@@ -260,6 +267,9 @@ sidebar pagination, layer blending, mobile layout, client-side caching.
 ## Backlog
 
 - Sleep tracking (`HKCategoryTypeSleep`)
+- Workout tags / notes (extend `workout_annotations`)
+- Photos ↔ workouts via the immich API (search assets by taken-at inside start/end, GPS bbox
+  from the route; store asset id in `workout_annotations`; thumbnails proxied by the backend)
 - ~~Background App Refresh for more reliable workout sync~~ — BGProcessingTask landed 2026-09-08
 - Historical import could reuse the metadata-first + queue path to cut its peak memory
 - Local notifications as sync reminders

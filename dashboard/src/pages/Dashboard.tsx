@@ -9,6 +9,7 @@ export function Dashboard() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [days, setDays] = useState(7);
+	const [favoritesOnly, setFavoritesOnly] = useState(false);
 
 	// Selected workout state
 	const [selectedWorkout, setSelectedWorkout] = useState<WorkoutDetail | null>(
@@ -71,6 +72,32 @@ export function Dashboard() {
 		setSelectedWorkout(null);
 		setSelectedRoute(null);
 	};
+
+	// Optimistic: flip locally, revert if the PUT fails.
+	const toggleFavorite = async (workoutId: string, next: boolean) => {
+		const apply = (value: boolean) =>
+			setData((prev) =>
+				prev
+					? {
+							...prev,
+							workouts: prev.workouts.map((w) =>
+								w.id === workoutId ? { ...w, is_favorite: value } : w,
+							),
+						}
+					: prev,
+			);
+		apply(next);
+		try {
+			await api.setWorkoutFavorite(workoutId, next);
+		} catch (err) {
+			console.error("Failed to update favorite:", err);
+			apply(!next);
+		}
+	};
+
+	const visibleWorkouts = favoritesOnly
+		? (data?.workouts ?? []).filter((w) => w.is_favorite)
+		: (data?.workouts ?? []);
 
 	const formatDuration = (seconds: number) => {
 		const hours = Math.floor(seconds / 3600);
@@ -262,45 +289,83 @@ export function Dashboard() {
 						</div>
 
 						{/* Recent Workouts */}
-						<h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-							Recent Workouts
-						</h2>
-						{data.workouts.length === 0 ? (
+						<div className="flex items-center justify-between mb-4">
+							<h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+								Recent Workouts
+							</h2>
+							<button
+								type="button"
+								aria-pressed={favoritesOnly}
+								onClick={() => setFavoritesOnly((v) => !v)}
+								className={`px-3 py-1.5 rounded-lg text-sm font-medium transition cursor-pointer ${
+									favoritesOnly
+										? "bg-red-500 text-white"
+										: "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+								}`}
+							>
+								♥ Favorites
+							</button>
+						</div>
+						{visibleWorkouts.length === 0 ? (
 							<p className="text-gray-600 dark:text-gray-400">
-								No workouts found
+								{favoritesOnly
+									? "No favorites in this range"
+									: "No workouts found"}
 							</p>
 						) : (
 							<div className="space-y-3">
-								{data.workouts.map((workout) => (
-									<button
-										key={workout.id}
-										type="button"
-										onClick={() => loadWorkoutDetails(workout.id)}
-										className="w-full text-left bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition p-4 cursor-pointer"
-									>
-										<div className="flex items-start justify-between mb-2">
-											<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-												{formatWorkoutType(workout.workout_type)}
-											</h3>
-											<span className="text-sm text-gray-500 dark:text-gray-400">
-												{formatDate(
-													workout.start_date,
-													getTimezone(workout.metadata),
-												)}
-											</span>
-										</div>
-										<div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-											<span>{formatDuration(workout.duration_seconds)}</span>
-											<span>
-												{formatDistance(workout.total_distance_meters)}
-											</span>
-											{workout.has_route && (
-												<span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
-													📍 GPS
+								{visibleWorkouts.map((workout) => (
+									// Heart sits beside, not inside, the card button: nested
+									// buttons are invalid HTML and the clicks would bubble.
+									<div key={workout.id} className="relative">
+										<button
+											type="button"
+											onClick={() => loadWorkoutDetails(workout.id)}
+											className="w-full text-left bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition p-4 cursor-pointer"
+										>
+											<div className="flex items-start justify-between mb-2 pr-8">
+												<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+													{formatWorkoutType(workout.workout_type)}
+												</h3>
+												<span className="text-sm text-gray-500 dark:text-gray-400">
+													{formatDate(
+														workout.start_date,
+														getTimezone(workout.metadata),
+													)}
 												</span>
-											)}
-										</div>
-									</button>
+											</div>
+											<div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+												<span>{formatDuration(workout.duration_seconds)}</span>
+												<span>
+													{formatDistance(workout.total_distance_meters)}
+												</span>
+												{workout.has_route && (
+													<span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+														📍 GPS
+													</span>
+												)}
+											</div>
+										</button>
+										<button
+											type="button"
+											aria-label={
+												workout.is_favorite
+													? "Remove from favorites"
+													: "Add to favorites"
+											}
+											aria-pressed={workout.is_favorite}
+											onClick={() =>
+												toggleFavorite(workout.id, !workout.is_favorite)
+											}
+											className={`absolute top-3 right-3 text-xl leading-none px-1 transition cursor-pointer ${
+												workout.is_favorite
+													? "text-red-500 hover:text-red-400"
+													: "text-gray-400 dark:text-gray-500 hover:text-red-400"
+											}`}
+										>
+											{workout.is_favorite ? "♥" : "♡"}
+										</button>
+									</div>
 								))}
 							</div>
 						)}
