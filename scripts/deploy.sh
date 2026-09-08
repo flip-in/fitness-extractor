@@ -53,10 +53,9 @@ smoke() {
 
 if [ -n "$ROLLBACK_TAG" ]; then
   echo "Rolling back to $ROLLBACK_TAG (no upload)"
-  PREV=$("${SSH[@]}" "$ROLLBACK_TAG" </dev/null)
-  echo "$PREV"
+  PREV=$("${SSH[@]}" "$ROLLBACK_TAG" </dev/null | tee /dev/stderr | sed -n 's/^previous=//p')
   wait_healthy
-  smoke "$ROLLBACK_TAG"
+  smoke "$ROLLBACK_TAG" "$PREV"
   exit 0
 fi
 

@@ -151,18 +151,25 @@ page) or drop the dependency.
 
 **Fixes landed 2026-01-21/22:** heart rate aggregation, timezone display.
 
-## Phase 4: Deployment — 🟡 Designing
+## Phase 4: Deployment — 🟡 Deployed 2026-09-08, cutover pending
 
-Design approved 2026-09-08: `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`. Single
-`app` image (API + dashboard same-origin), built on the Mac for amd64 and shipped over a
-restricted SSH deploy key to `/volume2/docker/fitness-extractor/` on ceres (DS423+); pgdata on the
-SSD, nightly dumps to volume1. Deploy key installed and tested 2026-09-08.
+Design: `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`. Single `app` image (API +
+dashboard same-origin), built on the Mac for amd64 and shipped over a restricted, forced-command
+SSH key to `/volume2/docker/fitness-extractor/` on ceres (DS423+). pgdata on the volume2 SSD,
+nightly `pg_dump` to `/volume1/homes/Oberon/backups/fitness-extractor/`.
 
-- [ ] Implementation plan (writing-plans)
-- [ ] Root multi-stage Dockerfile + `.dockerignore`; `docker-compose.nas.yml`; backend env-only config
-- [ ] `scripts/deploy.sh`, `receive-deploy.sh`, `backup.sh`; smoke test `--allow-empty`
-- [ ] `002_seed_user.sql` (fresh DB has no user row; every import FK-fails without it)
-- [ ] Bootstrap on NAS, first deploy, cutover, verification (spec §3.3–3.5)
+**Deploy:** `./scripts/deploy.sh` (HEAD must equal origin/master). Rollback:
+`./scripts/deploy.sh --rollback <tag>`. First deploy `2def805` passed 12/12 smoke checks on an
+empty DB; rollback path, backup script, initdb + seed user all exercised on the NAS.
+
+- [x] Dockerfile, `.dockerignore`, `docker-compose.nas.yml`, env-only backend config, SPA serving
+- [x] `scripts/deploy.sh`, `scripts/nas/receive-deploy.sh`, `scripts/nas/backup.sh`
+- [x] `002_seed_user.sql`; NAS bootstrap; first deploy; backup dry run
+- [ ] DSM Task Scheduler: daily 03:00, user Oberon, `bash /volume2/docker/fitness-extractor/backup.sh`, email on error
+- [ ] Phone cutover: `apiBaseURL = "http://100.121.150.120:3000"`, import 1100 days once, back to 90
+- [ ] Verify §3.5: row counts, off-LAN dashboard, overnight route backfill, restore drill
+- [ ] Browser homepage → `http://100.121.150.120:3000`
+- [ ] Optional: Hyper Backup → the backups folder
 - [ ] Deploy to Synology NAS via Docker Compose
 - [ ] Tailscale access
 - [ ] Point iOS `apiBaseURL` at the NAS Tailscale IP (currently a LAN IP that changes)
