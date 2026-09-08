@@ -199,7 +199,10 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
    Per-type errors are isolated (one failing type no longer aborts the rest); anchors are saved
    only after the POST succeeds **with zero rejected rows** (HTTP 207 used to advance the anchor
    past failed rows — pre-existing bug, fixed); a wrong unit fails that type's fetch (anchor kept)
-   instead of crashing. Deferred from review: `HKObjectQueryNoLimit` still materialises the whole
+   instead of crashing. **Same-day fix:** rings now sync *before* metrics — the first build
+   rethrew a metric-type error after the loop, which skipped rings on every wake where any type
+   failed (seen live: 10:41 CEST metrics POSTed, no rings POST, dashboard stuck at 115 kcal).
+   Deferred from review: `HKObjectQueryNoLimit` still materialises the whole
    backlog after prolonged POST failures (page it); 43 serial queries per wake is fine while most
    return empty, but add a wake deadline if observer completion starts timing out.
    New types start **forward-only** from `lastSyncDate` — see step 4. HealthKit prompts for the

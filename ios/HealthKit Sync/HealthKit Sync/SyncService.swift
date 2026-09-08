@@ -68,11 +68,14 @@ class SyncService: ObservableObject {
             // Sync workouts (metadata only; routes queue up for backfill)
             try await syncWorkouts()
 
+            // Rings before metrics: they are the most visible thing on the
+            // dashboard and one cheap query. Metrics are 43 queries and any
+            // one of them can fail (e.g. a type not yet authorized) — that
+            // must not cost the rings update.
+            try await syncActivityRings()
+
             // Sync health metrics
             try await syncHealthMetrics()
-
-            // Sync activity rings
-            try await syncActivityRings()
 
             // Update last sync date
             let now = Date()
@@ -236,7 +239,8 @@ class SyncService: ObservableObject {
     /// One anchored fetch + POST per type in `HealthMetricTypes.all`. A type that
     /// fails (HealthKit or network) is logged and skipped so one bad type can't
     /// block the other ~40; its anchor is left untouched so it retries next wake.
-    /// The first error is rethrown at the end so the sync still reports failure.
+    /// The first error is rethrown at the end so the sync still reports failure
+    /// (rings and workouts have already landed by then — see `performFullSync`).
     ///
     /// A type with no anchor yet (newly added to the table) starts from
     /// `lastSyncDate`: forward-only. History for new types is ROADMAP step 4.
