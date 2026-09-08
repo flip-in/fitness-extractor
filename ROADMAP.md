@@ -246,7 +246,9 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended
      within 6h (`RouteBackfillQueue.freshWindow`; end dates persisted alongside the queue) has
      its route fetched right after rings, before metrics. Entries queued before this build
-     have no end date and stay on the nightly path.
+     have no end date and stay on the nightly path. **Verified 2026-09-08 16:06 CEST:** the
+     13:36–13:55Z ride landed with `has_route: true` on the first wake after it (workouts →
+     rings → route POST → metrics, 11s total).
    - **`print` → `os.Logger`** (2026-09-08, `Log.swift`, `logSync(_:)`): all 34 app log lines now
      land in the unified log at notice level, public privacy, so `log collect` archives show the
      app's own sync narrative (type synced, route attached/dropped, nightly task ran) next to
