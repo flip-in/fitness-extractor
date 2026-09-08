@@ -16,7 +16,10 @@ HOST=${FITNESS_NAS_HOST:-ceres}
 KEY=${FITNESS_DEPLOY_KEY:-$HOME/.ssh/fitness-deploy}
 URL=${FITNESS_NAS_URL:-http://100.121.150.120:3000}
 IMAGE=fitness-extractor
-SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes "$HOST")
+# AddKeysToAgent=no: ~/.ssh/config has `AddKeysToAgent yes` for every host, and a
+# deploy key sitting in the agent breaks interactive `ssh ceres` afterwards (the
+# NAS accepts it first and the forced command refuses and disconnects).
+SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o AddKeysToAgent=no -o BatchMode=yes "$HOST")
 
 SMOKE_ARGS=(--dashboard)
 ROLLBACK_TAG=""
