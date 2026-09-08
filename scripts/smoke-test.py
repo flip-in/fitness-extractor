@@ -140,6 +140,30 @@ status, body = call(
 )
 check("GET /api/health-metrics/:metricType", status == 200 and bool(body), str(status))
 
+status, body = call("/api/dashboard/favorites")
+favs = (body.get("data", {}).get("workouts") if isinstance(body, dict) else None)
+check(
+    "GET /api/dashboard/favorites",
+    status == 200 and isinstance(favs, list),
+    f"{len(favs)} favorites" if isinstance(favs, list) else str(status),
+)
+
+if wid:
+    # Re-assert the current flag: exercises the write path without changing state.
+    current = bool(workouts[0].get("is_favorite"))
+    status, body = call(
+        f"/api/workout/{wid}/favorite", method="PUT", body={"is_favorite": current}
+    )
+    check(
+        "PUT /api/workout/:id/favorite (idempotent)",
+        status == 200 and isinstance(body, dict) and body.get("success") is True,
+        str(status),
+    )
+    status, _ = call(f"/api/workout/{wid}/favorite", method="PUT", body={"is_favorite": "yes"})
+    check("non-boolean is_favorite -> 400", status == 400, str(status))
+else:
+    check("PUT /api/workout/:id/favorite", ALLOW_EMPTY, "no workouts to test against")
+
 status, body = call(f"/api/sync/anchors/{USER}/workouts")
 check(
     "GET /api/sync/anchors/:userId/:dataType (two params)",
