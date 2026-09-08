@@ -4,6 +4,7 @@ import type {
 	HealthMetric,
 	WorkoutDetail,
 	WorkoutRoute,
+	WorkoutSummary,
 } from "./types";
 
 // API configuration from environment variables.
@@ -83,6 +84,13 @@ class ApiClient {
 		return this.request<DashboardResponse>(
 			`/api/dashboard/recent?days=${days}`,
 		);
+	}
+
+	async getFavorites(): Promise<WorkoutSummary[]> {
+		const data = await this.request<{ workouts: WorkoutSummary[] }>(
+			"/api/dashboard/favorites",
+		);
+		return data.workouts;
 	}
 
 	// Workout endpoints

@@ -3,6 +3,7 @@ import { getPool } from "../db/pool.js";
 import {
 	calculateSummaryStats,
 	getActivityRingsByDate,
+	getFavoriteWorkouts,
 	getHealthMetricsByType,
 	getRecentActivityRings,
 	getRecentWorkouts,
@@ -58,6 +59,27 @@ export async function getRecentDashboardData(
 		res.status(500).json({
 			error: "Internal Server Error",
 			message: "Failed to fetch dashboard data",
+		});
+	}
+}
+
+/**
+ * GET /api/dashboard/favorites
+ * All favorited workouts, any date, newest first.
+ */
+export async function getFavoriteWorkoutList(
+	req: Request,
+	res: Response,
+): Promise<void> {
+	try {
+		const userId = (req.query.user_id as string) || DEFAULT_USER_ID;
+		const workouts = await getFavoriteWorkouts(getPool(), userId);
+		res.status(200).json({ success: true, data: { workouts } });
+	} catch (error) {
+		console.error("Error in getFavoriteWorkoutList:", error);
+		res.status(500).json({
+			error: "Internal Server Error",
+			message: "Failed to fetch favorite workouts",
 		});
 	}
 }

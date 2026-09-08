@@ -80,6 +80,24 @@ export interface HealthMetricData {
 	source_name: string | null;
 }
 
+const WORKOUT_SUMMARY_SELECT = `
+	SELECT
+		w.id,
+		w.workout_type,
+		w.start_date,
+		w.end_date,
+		w.duration_seconds,
+		w.total_distance_meters,
+		w.total_energy_burned_kcal,
+		w.avg_heart_rate_bpm,
+		w.max_heart_rate_bpm,
+		EXISTS(SELECT 1 FROM workout_routes wr WHERE wr.workout_id = w.id) as has_route,
+		COALESCE(a.is_favorite, false) as is_favorite,
+		w.metadata
+	FROM workouts w
+	LEFT JOIN workout_annotations a ON a.healthkit_uuid = w.healthkit_uuid
+`;
+
 /**
  * Get recent workouts for dashboard (last N days)
  */
@@ -89,27 +107,31 @@ export async function getRecentWorkouts(
 	days: number,
 ): Promise<WorkoutSummary[]> {
 	const query = `
-		SELECT
-			w.id,
-			w.workout_type,
-			w.start_date,
-			w.end_date,
-			w.duration_seconds,
-			w.total_distance_meters,
-			w.total_energy_burned_kcal,
-			w.avg_heart_rate_bpm,
-			w.max_heart_rate_bpm,
-			EXISTS(SELECT 1 FROM workout_routes wr WHERE wr.workout_id = w.id) as has_route,
-			COALESCE(a.is_favorite, false) as is_favorite,
-			w.metadata
-		FROM workouts w
-		LEFT JOIN workout_annotations a ON a.healthkit_uuid = w.healthkit_uuid
+		${WORKOUT_SUMMARY_SELECT}
 		WHERE w.user_id = $1
 		AND w.start_date >= NOW() - INTERVAL '1 day' * $2
 		ORDER BY w.start_date DESC
 	`;
 
 	const result = await pool.query(query, [userId, days]);
+	return result.rows;
+}
+
+/**
+ * All favorited workouts, any date. Favorites are rare (hand-picked), so no
+ * pagination; the partial index on workout_annotations keeps this cheap.
+ */
+export async function getFavoriteWorkouts(
+	pool: Pool,
+	userId: string,
+): Promise<WorkoutSummary[]> {
+	const query = `
+		${WORKOUT_SUMMARY_SELECT}
+		WHERE w.user_id = $1 AND a.is_favorite
+		ORDER BY w.start_date DESC
+	`;
+
+	const result = await pool.query(query, [userId]);
 	return result.rows;
 }
 

@@ -143,8 +143,9 @@ blowing the background memory budget; addressed 2026-09-08 (see top). Verify on 
 - [x] Activity rings component
 - [x] API client integration (`api.ts`)
 - [x] Styling and polish — click-to-open workout modal, click-outside-to-close, cursor affordances
-- [x] **Favorites** (2026-09-08): heart on each card + "♥ Favorites" filter (client-side, within
-  the selected day range). `PUT /api/workout/:id/favorite {is_favorite}`. Stored in the new
+- [x] **Favorites** (2026-09-08): heart on each card + "♥ Favorites" toggle that swaps the list
+  for **all-time** favorites (`GET /api/dashboard/favorites`, ignores the day range).
+  `PUT /api/workout/:id/favorite {is_favorite}`. Stored in the new
   `workout_annotations` table (`003_workout_annotations.sql`), keyed on `healthkit_uuid` with
   **no FK** so a wipe + re-import keeps them; future tags/notes/immich photo links go there too.
   Migration is additive but NOT auto-applied on the NAS (initdb only runs on a fresh volume):

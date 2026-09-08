@@ -2,14 +2,22 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ActivityRings } from "../components/ActivityRings";
 import { WorkoutMap } from "../components/WorkoutMap";
-import type { DashboardResponse, WorkoutDetail, WorkoutRoute } from "../types";
+import type {
+	DashboardResponse,
+	WorkoutDetail,
+	WorkoutRoute,
+	WorkoutSummary,
+} from "../types";
 
 export function Dashboard() {
 	const [data, setData] = useState<DashboardResponse | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [days, setDays] = useState(7);
+	// Favorites are all-time, not bound to the day range, so they are a
+	// separate list fetched when the filter is switched on.
 	const [favoritesOnly, setFavoritesOnly] = useState(false);
+	const [favorites, setFavorites] = useState<WorkoutSummary[] | null>(null);
 
 	// Selected workout state
 	const [selectedWorkout, setSelectedWorkout] = useState<WorkoutDetail | null>(
@@ -21,6 +29,14 @@ export function Dashboard() {
 	useEffect(() => {
 		loadDashboard();
 	}, [days]);
+
+	useEffect(() => {
+		if (!favoritesOnly) return;
+		api
+			.getFavorites()
+			.then(setFavorites)
+			.catch((err) => console.error("Failed to load favorites:", err));
+	}, [favoritesOnly]);
 
 	// Escape closes the workout modal. Listening on the document rather than the
 	// modal element means it works regardless of where focus currently sits.
@@ -73,19 +89,20 @@ export function Dashboard() {
 		setSelectedRoute(null);
 	};
 
-	// Optimistic: flip locally, revert if the PUT fails.
+	// Optimistic: flip locally in both lists, revert if the PUT fails. An
+	// un-hearted row stays visible in the favorites view until the list reloads,
+	// so a mis-click can be undone in place.
 	const toggleFavorite = async (workoutId: string, next: boolean) => {
-		const apply = (value: boolean) =>
+		const apply = (value: boolean) => {
+			const flip = (list: WorkoutSummary[]) =>
+				list.map((w) =>
+					w.id === workoutId ? { ...w, is_favorite: value } : w,
+				);
 			setData((prev) =>
-				prev
-					? {
-							...prev,
-							workouts: prev.workouts.map((w) =>
-								w.id === workoutId ? { ...w, is_favorite: value } : w,
-							),
-						}
-					: prev,
+				prev ? { ...prev, workouts: flip(prev.workouts) } : prev,
 			);
+			setFavorites((prev) => (prev ? flip(prev) : prev));
+		};
 		apply(next);
 		try {
 			await api.setWorkoutFavorite(workoutId, next);
@@ -96,7 +113,7 @@ export function Dashboard() {
 	};
 
 	const visibleWorkouts = favoritesOnly
-		? (data?.workouts ?? []).filter((w) => w.is_favorite)
+		? (favorites ?? [])
 		: (data?.workouts ?? []);
 
 	const formatDuration = (seconds: number) => {
@@ -291,7 +308,7 @@ export function Dashboard() {
 						{/* Recent Workouts */}
 						<div className="flex items-center justify-between mb-4">
 							<h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-								Recent Workouts
+								{favoritesOnly ? "Favorite Workouts" : "Recent Workouts"}
 							</h2>
 							<button
 								type="button"
@@ -309,7 +326,9 @@ export function Dashboard() {
 						{visibleWorkouts.length === 0 ? (
 							<p className="text-gray-600 dark:text-gray-400">
 								{favoritesOnly
-									? "No favorites in this range"
+									? favorites === null
+										? "Loading favorites..."
+										: "No favorites yet"
 									: "No workouts found"}
 							</p>
 						) : (
