@@ -6,8 +6,10 @@ import type {
 	WorkoutRoute,
 } from "./types";
 
-// API configuration from environment variables
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+// API configuration from environment variables.
+// Default is relative (same origin): in production the backend serves this
+// build itself. Local split-process dev sets VITE_API_URL via dev-server.sh.
+const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 const API_KEY = import.meta.env.VITE_API_KEY;
 
 /// The route shape the backend actually returns, before it's reshaped into the

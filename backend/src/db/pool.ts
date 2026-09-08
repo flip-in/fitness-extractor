@@ -12,7 +12,11 @@ export function getPool(): pg.Pool {
 	if (!pool) {
 		pool = new Pool({
 			user: "postgres",
-			host: process.env.NODE_ENV === "production" ? "db" : "localhost",
+			// "db" is the compose service name in production; DB_HOST overrides for
+			// testing the production image against some other Postgres.
+			host:
+				process.env.DB_HOST ??
+				(process.env.NODE_ENV === "production" ? "db" : "localhost"),
 			database: "fitness",
 			password: process.env.DB_PASSWORD,
 			port: 5432,

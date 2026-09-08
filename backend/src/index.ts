@@ -1,16 +1,16 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import dotenv from "dotenv";
 
-// Load environment variables first, before other imports
-// Assume we're running from backend/ directory, so ../.env is project root
+// Load environment variables first, before other imports.
+// Local dev: run from backend/, so ../.env is the repo root. In the container
+// there is no .env file — compose injects the environment — so its absence is fine.
 const envPath = join(process.cwd(), "../.env");
-const result = dotenv.config({ path: envPath });
-
-console.log("Loading .env from:", envPath);
-
-if (result.error) {
-	console.error("Error loading .env file:", result.error);
-	process.exit(1);
+if (existsSync(envPath)) {
+	console.log("Loading .env from:", envPath);
+	dotenv.config({ path: envPath });
+} else {
+	console.log("No .env file; using process environment");
 }
 
 // Validate required env vars
@@ -82,6 +82,25 @@ app.get("/api/health", async (_req: Request, res: Response) => {
 		});
 	}
 });
+
+// Unknown /api/* paths must 404 as JSON. Without this the SPA fallback below
+// would answer them with index.html.
+app.use("/api", (_req: Request, res: Response) => {
+	res.status(404).json({ error: "Not Found" });
+});
+
+// Dashboard: in production the same process serves the Vite build, so the
+// browser talks to the API same-origin and CORS never enters the picture.
+// Set STATIC_DIR to the build directory; unset (local dev) serves nothing.
+const staticDir = process.env.STATIC_DIR;
+if (staticDir) {
+	app.use(express.static(staticDir));
+	// Express 5 / path-to-regexp v8: the catch-all is a named wildcard, not "*".
+	app.get("/*splat", (_req: Request, res: Response) => {
+		res.sendFile(join(staticDir, "index.html"));
+	});
+	console.log(`Serving dashboard from ${staticDir}`);
+}
 
 // Start server
 app.listen(PORT, () => {

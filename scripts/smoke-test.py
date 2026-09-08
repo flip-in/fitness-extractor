@@ -10,6 +10,10 @@ Talks only to the HTTP API so it can target any deployment:
     ./scripts/smoke-test.py http://nas:3000          # the NAS
     API_KEY=... ./scripts/smoke-test.py http://nas:3000
 
+Flags:
+    --allow-empty   a database with no workouts passes (first deploy)
+    --dashboard     also require GET / to serve the dashboard's index.html
+
 The key is read from the root .env unless API_KEY is set in the environment.
 Exits non-zero if any check fails, so it works as a deploy gate.
 """
@@ -21,7 +25,11 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3000").rstrip("/")
+ARGS = sys.argv[1:]
+ALLOW_EMPTY = "--allow-empty" in ARGS
+DASHBOARD = "--dashboard" in ARGS
+POSITIONAL = [a for a in ARGS if not a.startswith("--")]
+BASE = (POSITIONAL[0] if POSITIONAL else "http://localhost:3000").rstrip("/")
 USER = "00000000-0000-0000-0000-000000000001"
 
 KEY = os.environ.get("API_KEY")
@@ -91,15 +99,26 @@ check(
 
 check(
     "GET /api/dashboard/recent (querystring)",
-    status == 200 and len(workouts) > 0,
-    f"{len(workouts)} workouts",
+    status == 200 and (len(workouts) > 0 or ALLOW_EMPTY),
+    f"{len(workouts)} workouts" + (" (empty allowed)" if ALLOW_EMPTY else ""),
 )
 
 if wid:
     status, body = call(f"/api/workout/{wid}")
     check("GET /api/workout/:id", status == 200 and bool(body), str(status))
 else:
-    check("GET /api/workout/:id", False, "no workouts to test against")
+    check("GET /api/workout/:id", ALLOW_EMPTY, "no workouts to test against")
+
+if DASHBOARD:
+    req = urllib.request.Request(BASE + "/")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            html = r.read(4096).decode(errors="replace")
+            ok = r.status == 200 and "<div id=\"root\"" in html
+            detail = str(r.status)
+    except Exception as e:  # noqa: BLE001
+        ok, detail = False, str(e)
+    check("GET / serves dashboard (SPA)", ok, detail)
 
 if wid_route:
     status, body = call(f"/api/workout/{wid_route}/route")

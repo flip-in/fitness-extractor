@@ -1,0 +1,51 @@
+# Production compose for the Synology (ceres). Installed by scripts/deploy.sh as
+# /volume2/docker/fitness-extractor/docker-compose.yml. The root docker-compose.yml
+# stays the laptop dev file (db only, port published).
+#
+# .env next to this file (written once by hand, never shipped by the script):
+#   DB_PASSWORD=…   API_KEY=…   TAG=<git short sha, maintained by receive-deploy.sh>
+#
+# Design: docs/superpowers/specs/2026-09-08-nas-deployment-design.md
+
+services:
+  db:
+    image: postgres:16
+    container_name: fitness-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: fitness
+    volumes:
+      # SSD, local filesystem, chown 999:999 before first boot. Never NFS/SMB.
+      - /volume2/docker/fitness-extractor/pgdata:/var/lib/postgresql/data
+      # Runs only when pgdata is empty: schema + seed user.
+      - /volume2/docker/fitness-extractor/migrations:/docker-entrypoint-initdb.d:ro
+    # Not published: only `app` talks to it.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    image: fitness-extractor:${TAG}
+    container_name: fitness-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PASSWORD: ${DB_PASSWORD}
+      API_KEY: ${API_KEY}
+    ports:
+      # LAN at home, Tailscale when away. Tailscale is the security boundary.
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
