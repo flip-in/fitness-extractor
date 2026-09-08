@@ -134,7 +134,7 @@ struct ContentView: View {
                         try await HealthKitService.shared.requestAuthorization()
                         hasRequestedHealthKitAuth = true
                     } catch {
-                        print("HealthKit authorization error: \(error)")
+                        logSync("HealthKit authorization error: \(error)")
                         showingError = true
                     }
                 }

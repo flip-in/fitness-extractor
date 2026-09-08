@@ -24,7 +24,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
     private func setupBackgroundObservers() {
         guard HKHealthStore.isHealthDataAvailable() else {
-            print("❌ HealthKit not available")
+            logSync("❌ HealthKit not available")
             return
         }
 
@@ -55,20 +55,20 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // They are synced during manual/scheduled syncs instead
 
         if Config.debugLogging {
-            print("✅ Background observers set up")
+            logSync("✅ Background observers set up")
         }
     }
 
     private func setupObserver(for sampleType: HKSampleType, dataType: String) {
         let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] query, completionHandler, error in
             if let error = error {
-                print("❌ Observer error for \(dataType): \(error)")
+                logSync("❌ Observer error for \(dataType): \(error)")
                 completionHandler()
                 return
             }
 
             if Config.debugLogging {
-                print("🔔 Background delivery triggered for \(dataType)")
+                logSync("🔔 Background delivery triggered for \(dataType)")
             }
 
             // Perform sync in background
@@ -83,10 +83,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Enable background delivery
         healthStore.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { success, error in
             if let error = error {
-                print("❌ Failed to enable background delivery for \(dataType): \(error)")
+                logSync("❌ Failed to enable background delivery for \(dataType): \(error)")
             } else if success {
                 if Config.debugLogging {
-                    print("✅ Background delivery enabled for \(dataType)")
+                    logSync("✅ Background delivery enabled for \(dataType)")
                 }
             }
         }

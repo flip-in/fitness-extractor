@@ -75,7 +75,7 @@ class HealthKitService {
         try await healthStore.requestAuthorization(toShare: [], read: readTypes)
 
         if Config.debugLogging {
-            print("✅ HealthKit authorization granted")
+            logSync("✅ HealthKit authorization granted")
         }
     }
 
@@ -354,7 +354,7 @@ class HealthKitService {
     private func convertQuantitySampleToMetric(_ sample: HKQuantitySample, entry: HealthMetricTypes.Entry) -> HealthMetricData? {
         let unit = entry.unit
         guard sample.quantity.is(compatibleWith: unit) else {
-            print("❌ Unit \(unit.unitString) incompatible with \(entry.identifier.rawValue) sample \(sample.quantity)")
+            logSync("❌ Unit \(unit.unitString) incompatible with \(entry.identifier.rawValue) sample \(sample.quantity)")
             return nil
         }
 

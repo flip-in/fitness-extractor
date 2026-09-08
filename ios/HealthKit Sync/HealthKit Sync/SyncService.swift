@@ -65,7 +65,7 @@ class SyncService: ObservableObject {
     func performFullSync(budget: TimeInterval? = SyncService.wakeBudget, allMetrics: Bool = false, shouldContinue: @escaping () -> Bool = { true }) async {
         guard !isSyncing else {
             if Config.debugLogging {
-                print("⏭️ Sync already in progress, skipping")
+                logSync("⏭️ Sync already in progress, skipping")
             }
             return
         }
@@ -121,14 +121,14 @@ class SyncService: ObservableObject {
             syncStatus = "Last synced: \(Self.formatDate(now))"
 
             if Config.debugLogging {
-                print("✅ Full sync completed successfully")
+                logSync("✅ Full sync completed successfully")
             }
         } catch {
             syncError = error.localizedDescription
             syncStatus = "Sync failed: \(error.localizedDescription)"
 
             if Config.debugLogging {
-                print("❌ Sync error: \(error)")
+                logSync("❌ Sync error: \(error)")
             }
         }
 
@@ -198,7 +198,7 @@ class SyncService: ObservableObject {
             pendingRoutes = routeQueue.count
 
             if Config.debugLogging {
-                print("🗺️ Route attached for \(uuidString): updated \(response.updated ?? 0), skipped \(response.skipped ?? 0)")
+                logSync("🗺️ Route attached for \(uuidString): updated \(response.updated ?? 0), skipped \(response.skipped ?? 0)")
             }
             return .sent
         } catch let error as HealthKitError {
@@ -206,12 +206,12 @@ class SyncService: ObservableObject {
             routeQueue.remove(uuidString)
             pendingRoutes = routeQueue.count
             if Config.debugLogging {
-                print("🗺️ Dropped \(uuidString) from route queue: \(error)")
+                logSync("🗺️ Dropped \(uuidString) from route queue: \(error)")
             }
             return .dropped
         } catch {
             if Config.debugLogging {
-                print("❌ Route attach failed for \(uuidString): \(error)")
+                logSync("❌ Route attach failed for \(uuidString): \(error)")
             }
             return .failed
         }
@@ -233,7 +233,7 @@ class SyncService: ObservableObject {
                 syncStatus = "Importing \(workouts.count) workouts..."
                 let response = try await api.syncWorkouts(workouts)
                 if Config.debugLogging {
-                    print("📊 Historical workouts: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                    logSync("📊 Historical workouts: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
                 }
             }
 
@@ -248,7 +248,7 @@ class SyncService: ObservableObject {
                 syncStatus = "Importing \(rings.count) activity days..."
                 let response = try await api.syncActivityRings(rings)
                 if Config.debugLogging {
-                    print("📊 Activity rings: synced \(response.synced ?? 0)")
+                    logSync("📊 Activity rings: synced \(response.synced ?? 0)")
                 }
             }
 
@@ -260,14 +260,14 @@ class SyncService: ObservableObject {
             syncStatus = "Historical import complete! Last synced: \(Self.formatDate(now))"
 
             if Config.debugLogging {
-                print("✅ Historical import completed")
+                logSync("✅ Historical import completed")
             }
         } catch {
             syncError = error.localizedDescription
             syncStatus = "Import failed: \(error.localizedDescription)"
 
             if Config.debugLogging {
-                print("❌ Import error: \(error)")
+                logSync("❌ Import error: \(error)")
             }
         }
 
@@ -289,7 +289,7 @@ class SyncService: ObservableObject {
             let response = try await api.syncWorkouts(workouts)
 
             if Config.debugLogging {
-                print("📊 Workouts: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                logSync("📊 Workouts: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
             }
 
             // Queue every one; workouts without GPS drop out on first attempt.
@@ -339,7 +339,7 @@ class SyncService: ObservableObject {
                 }
                 for await (name, error) in group {
                     if let error = error {
-                        if Config.debugLogging { print("❌ \(name): \(error)") }
+                        if Config.debugLogging { logSync("❌ \(name): \(error)") }
                         if firstError == nil { firstError = error }
                     }
                 }
@@ -348,7 +348,7 @@ class SyncService: ObservableObject {
         }
 
         if Config.debugLogging && attempted < entries.count {
-            print("⏱️ Metric pass out of budget at \(attempted)/\(entries.count) types; rest waits for the next wake or nightly")
+            logSync("⏱️ Metric pass out of budget at \(attempted)/\(entries.count) types; rest waits for the next wake or nightly")
         }
 
         if let firstError = firstError {
@@ -366,7 +366,7 @@ class SyncService: ObservableObject {
             let response = try await api.syncHealthMetrics(metrics)
 
             if Config.debugLogging {
-                print("📊 \(entry.identifier.rawValue): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                logSync("📊 \(entry.identifier.rawValue): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
             }
 
             // HTTP 207 = some rows failed; it isn't an error to the client,
@@ -395,7 +395,7 @@ class SyncService: ObservableObject {
             let response = try await api.syncActivityRings(rings)
 
             if Config.debugLogging {
-                print("📊 Activity rings: synced \(response.synced ?? 0), updated \(response.updated ?? 0)")
+                logSync("📊 Activity rings: synced \(response.synced ?? 0), updated \(response.updated ?? 0)")
             }
         }
     }
@@ -408,7 +408,7 @@ class SyncService: ObservableObject {
             UserDefaults.standard.set(data, forKey: key)
         } catch {
             if Config.debugLogging {
-                print("❌ Failed to save anchor: \(error)")
+                logSync("❌ Failed to save anchor: \(error)")
             }
         }
     }
@@ -425,7 +425,7 @@ class SyncService: ObservableObject {
             return anchor
         } catch {
             if Config.debugLogging {
-                print("❌ Failed to load anchor: \(error)")
+                logSync("❌ Failed to load anchor: \(error)")
             }
             return nil
         }

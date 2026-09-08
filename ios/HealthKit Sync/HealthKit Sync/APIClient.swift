@@ -68,7 +68,7 @@ class APIClient {
         }
 
         if Config.debugLogging {
-            print("📡 API Request: \(method) \(endpoint)")
+            logSync("📡 API Request: \(method) \(endpoint)")
         }
 
         do {
@@ -79,7 +79,7 @@ class APIClient {
             }
 
             if Config.debugLogging {
-                print("📡 API Response: \(httpResponse.statusCode)")
+                logSync("📡 API Response: \(httpResponse.statusCode)")
             }
 
             // Handle HTTP errors
@@ -95,8 +95,8 @@ class APIClient {
                 return decoded
             } catch {
                 if Config.debugLogging {
-                    print("❌ Decoding error: \(error)")
-                    print("Response data: \(String(data: data, encoding: .utf8) ?? "nil")")
+                    logSync("❌ Decoding error: \(error)")
+                    logSync("Response data: \(String(data: data, encoding: .utf8) ?? "nil")")
                 }
                 throw APIError.decodingError(error)
             }
@@ -158,7 +158,7 @@ class APIClient {
 
         for (index, batch) in batches.enumerated() {
             if Config.debugLogging && batches.count > 1 {
-                print("📦 Sending \(label) batch \(index + 1)/\(batches.count) (\(batch.count) items)")
+                logSync("📦 Sending \(label) batch \(index + 1)/\(batches.count) (\(batch.count) items)")
             }
 
             let body = try encode(batch)

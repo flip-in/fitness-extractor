@@ -129,12 +129,12 @@ enum NightlySyncTask {
         do {
             try BGTaskScheduler.shared.submit(request)
             if Config.debugLogging {
-                print("🗓️ Nightly sync task scheduled (\(RouteBackfillQueue.shared.count) routes pending)")
+                logSync("🗓️ Nightly sync task scheduled (\(RouteBackfillQueue.shared.count) routes pending)")
             }
         } catch {
             // BGTaskSchedulerErrorDomain code 1 = unavailable (simulator, Low Power,
             // or Background App Refresh disabled). Not fatal: observer wakes still run.
-            print("❌ Failed to schedule nightly sync: \(error)")
+            logSync("❌ Failed to schedule nightly sync: \(error)")
         }
     }
 
@@ -147,7 +147,7 @@ enum NightlySyncTask {
         Task { @MainActor in
             let routes = await SyncService.shared.performNightlySync(shouldContinue: { !expired.isSet })
             if Config.debugLogging {
-                print("🌙 Nightly sync: \(routes) routes, \(RouteBackfillQueue.shared.count) still pending, expired: \(expired.isSet)")
+                logSync("🌙 Nightly sync: \(routes) routes, \(RouteBackfillQueue.shared.count) still pending, expired: \(expired.isSet)")
             }
             schedule()
             task.setTaskCompleted(success: !expired.isSet)
