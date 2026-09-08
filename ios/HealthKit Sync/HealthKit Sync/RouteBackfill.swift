@@ -26,22 +26,46 @@ final class RouteBackfillQueue {
     /// real limit; this just stops a runaway loop.
     static let perProcessingTaskLimit = 200
 
+    /// A route this recent is fetched at the head of the next wake, before the
+    /// metric tiers eat the budget — a ride should show GPS within the hour, not
+    /// after the nightly sweep. Older entries stay on the normal end-of-wake /
+    /// nightly path. Decision 2026-09-08 ("option 1").
+    static let freshWindow: TimeInterval = 6 * 60 * 60
+
     private let key = "routeBackfillQueue"
+    private let endDatesKey = "routeBackfillEndDates"
     private(set) var uuids: [String]
+    /// Workout end time per queued UUID, for `freshest(within:)`. Entries queued
+    /// before this existed have none and are simply never "fresh".
+    private var endDates: [String: Date]
+
+    private static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     private init() {
         uuids = UserDefaults.standard.stringArray(forKey: key) ?? []
+        let raw = UserDefaults.standard.dictionary(forKey: endDatesKey) as? [String: Double] ?? [:]
+        endDates = raw.mapValues { Date(timeIntervalSince1970: $0) }
     }
 
     var count: Int { uuids.count }
     var isEmpty: Bool { uuids.isEmpty }
 
-    func enqueue(_ newUuids: [String]) {
+    /// `endDate` in the backend's ISO 8601 form (`WorkoutData.endDate`).
+    func enqueue(_ workouts: [(uuid: String, endDate: String)]) {
         let existing = Set(uuids)
-        let additions = newUuids.filter { !existing.contains($0) }
-        guard !additions.isEmpty else { return }
-        uuids.append(contentsOf: additions)
-        persist()
+        var changed = false
+        for workout in workouts where !existing.contains(workout.uuid) {
+            uuids.append(workout.uuid)
+            if let date = Self.iso8601.date(from: workout.endDate) {
+                endDates[workout.uuid] = date
+            }
+            changed = true
+        }
+        if changed { persist() }
     }
 
     /// Newest first: recent workouts matter more, older GPS can take longer.
@@ -49,13 +73,25 @@ final class RouteBackfillQueue {
         Array(uuids.suffix(limit).reversed())
     }
 
+    /// The most recently ended queued workout, if it ended within `window`.
+    func freshest(within window: TimeInterval) -> String? {
+        let cutoff = Date(timeIntervalSinceNow: -window)
+        return uuids
+            .compactMap { uuid in endDates[uuid].map { (uuid, $0) } }
+            .filter { $0.1 > cutoff }
+            .max { $0.1 < $1.1 }?
+            .0
+    }
+
     func remove(_ uuid: String) {
         uuids.removeAll { $0 == uuid }
+        endDates[uuid] = nil
         persist()
     }
 
     private func persist() {
         UserDefaults.standard.set(uuids, forKey: key)
+        UserDefaults.standard.set(endDates.mapValues { $0.timeIntervalSince1970 }, forKey: endDatesKey)
     }
 }
 

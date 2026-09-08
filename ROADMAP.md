@@ -230,6 +230,12 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      delivers late (most of a workout's HR series). Anchor-only now.
    - Deferred: `HKObjectQueryNoLimit` still materialises the whole backlog after prolonged POST
      failures (page it).
+   - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
+     morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
+     hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended
+     within 6h (`RouteBackfillQueue.freshWindow`; end dates persisted alongside the queue) has
+     its route fetched right after rings, before metrics. Entries queued before this build
+     have no end date and stay on the nightly path.
    New types start **forward-only** from `lastSyncDate` — see step 4. HealthKit prompts for the
    new read types the next time the app calls `requestAuthorization` (one-time grant).
    Observers unchanged (HR/steps/energy/stand/workouts) — every wake syncs all 44 types anyway.
