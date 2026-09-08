@@ -252,6 +252,16 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      took 5 × 4s and starved the other hot types and the end-of-wake route step. Unbounded runs
      still page to the end. This is also why the lunchtime ride's route (queued by the old build,
      not "fresh") stayed pending through two observer runs: the route step never came up.
+     (Route landed 16:31 CEST via Sync Now on the new build.)
+   - **Backend bulk insert for metrics** (16:40 CEST): the Sync Now run failed with
+     `NSURLErrorDomain -1001` on every 5000-row page of *new* rows. `insertHealthMetric` did
+     connect/BEGIN/INSERT/COMMIT per row (20k round trips per page, >30s over the NAS); the NAS
+     logged 200 after the phone had given up, so anchors never advanced for backlog types.
+     `insertHealthMetrics` now does a multi-row `INSERT … ON CONFLICT DO NOTHING` in 1000-row
+     chunks, falling back to per-row for a chunk that fails so HTTP 207 still names the bad row.
+     Measured locally: 5000 fresh rows 1.5s (was >30s), 5000 dupes 0.1s. Phone request timeout
+     30s → 120s as headroom. Also: an empty metrics array returned 500 (0 === 0); now 200.
+     **Needs a NAS deploy** (backend change) — the phone build is already installed.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended

@@ -42,7 +42,9 @@ class APIClient {
         self.apiKey = Config.apiKey
 
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
+        // 30s timed out on 5000-row metric pages while the backend inserted row by
+        // row (2026-09-08); the backend is bulk now, this is headroom for a slow NAS.
+        config.timeoutIntervalForRequest = 120
         config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
     }

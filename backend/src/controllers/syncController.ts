@@ -6,7 +6,7 @@ import {
 } from "../services/activityRingsService.js";
 import {
 	type HealthMetricData,
-	insertHealthMetric,
+	insertHealthMetrics,
 } from "../services/healthMetricsService.js";
 import {
 	getSyncAnchor,
@@ -119,28 +119,14 @@ export async function syncHealthMetrics(
 		}
 
 		const pool = getPool();
-		let synced = 0;
-		let skipped = 0;
-		const errors: Array<{ healthkit_uuid: string; error: string }> = [];
-
-		// Process each metric
-		for (const metric of metrics as HealthMetricData[]) {
-			const result = await insertHealthMetric(pool, user_id, metric);
-
-			if (result.success) {
-				synced++;
-			} else if (result.error === "Duplicate metric") {
-				skipped++;
-			} else {
-				errors.push({
-					healthkit_uuid: metric.healthkit_uuid,
-					error: result.error || "Unknown error",
-				});
-			}
-		}
+		const { synced, skipped, errors } = await insertHealthMetrics(
+			pool,
+			user_id,
+			metrics as HealthMetricData[],
+		);
 
 		// Return appropriate status code
-		if (errors.length === metrics.length) {
+		if (metrics.length > 0 && errors.length === metrics.length) {
 			// All failed
 			res.status(500).json({
 				success: false,
