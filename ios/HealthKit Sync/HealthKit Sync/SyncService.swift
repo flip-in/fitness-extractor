@@ -25,9 +25,14 @@ class SyncService: ObservableObject {
 
     // UserDefaults keys for storing anchors
     private let workoutsAnchorKey = "workoutsAnchor"
-    private let heartRateAnchorKey = "heartRateAnchor"
-    private let stepCountAnchorKey = "stepCountAnchor"
     private let lastSyncDateKey = "lastSyncDate"
+
+    /// Pre-table anchor keys (2025-10 → 2026-09). Read once as a fallback so the
+    /// first run after upgrading doesn't re-fetch HR/steps from `lastSyncDate`.
+    private let legacyAnchorKeys: [HKQuantityTypeIdentifier: String] = [
+        .heartRate: "heartRateAnchor",
+        .stepCount: "stepCountAnchor",
+    ]
 
     private init() {
         // Load last sync date
@@ -228,48 +233,56 @@ class SyncService: ObservableObject {
         }
     }
 
+    /// One anchored fetch + POST per type in `HealthMetricTypes.all`. A type that
+    /// fails (HealthKit or network) is logged and skipped so one bad type can't
+    /// block the other ~40; its anchor is left untouched so it retries next wake.
+    /// The first error is rethrown at the end so the sync still reports failure.
+    ///
+    /// A type with no anchor yet (newly added to the table) starts from
+    /// `lastSyncDate`: forward-only. History for new types is ROADMAP step 4.
     private func syncHealthMetrics() async throws {
-        // Sync heart rate
-        let heartRateAnchor = loadAnchor(forKey: heartRateAnchorKey)
         let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        var firstError: Error?
 
-        let (heartRateMetrics, newHeartRateAnchor) = try await healthKit.fetchHealthMetrics(
-            type: .heartRate,
-            from: startDate,
-            anchor: heartRateAnchor
-        )
+        for entry in HealthMetricTypes.all {
+            let anchor = loadAnchor(forKey: entry.anchorKey)
+                ?? legacyAnchorKeys[entry.identifier].flatMap { loadAnchor(forKey: $0) }
 
-        if !heartRateMetrics.isEmpty {
-            let response = try await api.syncHealthMetrics(heartRateMetrics)
+            do {
+                let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(entry, from: startDate, anchor: anchor)
 
-            if Config.debugLogging {
-                print("📊 Heart rate: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                if !metrics.isEmpty {
+                    let response = try await api.syncHealthMetrics(metrics)
+
+                    if Config.debugLogging {
+                        print("📊 \(entry.identifier.rawValue): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                    }
+
+                    // HTTP 207 = some rows failed; it isn't an error to the client,
+                    // so check explicitly. Keep the old anchor and let the failed
+                    // rows be re-fetched (the backend dedupes the rest by UUID).
+                    if let errors = response.errors, !errors.isEmpty {
+                        throw NSError(domain: "Sync", code: 207, userInfo: [
+                            NSLocalizedDescriptionKey: "\(errors.count) of \(metrics.count) rows rejected: \(errors.first?.error ?? "")"
+                        ])
+                    }
+                }
+
+                // Only after the backend has every row: a failure above leaves
+                // the old anchor so the samples are re-fetched next time.
+                if let newAnchor = newAnchor {
+                    saveAnchor(newAnchor, forKey: entry.anchorKey)
+                }
+            } catch {
+                if Config.debugLogging {
+                    print("❌ \(entry.identifier.rawValue): \(error)")
+                }
+                if firstError == nil { firstError = error }
             }
         }
 
-        if let newHeartRateAnchor = newHeartRateAnchor {
-            saveAnchor(newHeartRateAnchor, forKey: heartRateAnchorKey)
-        }
-
-        // Sync step count
-        let stepCountAnchor = loadAnchor(forKey: stepCountAnchorKey)
-
-        let (stepCountMetrics, newStepCountAnchor) = try await healthKit.fetchHealthMetrics(
-            type: .stepCount,
-            from: startDate,
-            anchor: stepCountAnchor
-        )
-
-        if !stepCountMetrics.isEmpty {
-            let response = try await api.syncHealthMetrics(stepCountMetrics)
-
-            if Config.debugLogging {
-                print("📊 Step count: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
-            }
-        }
-
-        if let newStepCountAnchor = newStepCountAnchor {
-            saveAnchor(newStepCountAnchor, forKey: stepCountAnchorKey)
+        if let firstError = firstError {
+            throw firstError
         }
     }
 

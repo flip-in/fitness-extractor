@@ -14,6 +14,8 @@ enum HealthKitError: Error {
     case noRoute
     /// The workout was deleted from HealthKit since we queued it.
     case workoutNotFound
+    /// `HealthMetricTypes` lists a unit HealthKit can't convert this type to.
+    case incompatibleUnit(String)
 }
 
 class HealthKitService {
@@ -40,21 +42,10 @@ class HealthKitService {
         // Workout routes
         types.insert(HKSeriesType.workoutRoute())
 
-        // Health metrics
-        if let heartRate = HKObjectType.quantityType(forIdentifier: .heartRate) {
-            types.insert(heartRate)
-        }
-        if let stepCount = HKObjectType.quantityType(forIdentifier: .stepCount) {
-            types.insert(stepCount)
-        }
-        if let bodyMass = HKObjectType.quantityType(forIdentifier: .bodyMass) {
-            types.insert(bodyMass)
-        }
-        if let distanceWalkingRunning = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) {
-            types.insert(distanceWalkingRunning)
-        }
-        if let activeEnergyBurned = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
-            types.insert(activeEnergyBurned)
+        // Health metrics: every quantity type in the sync table. HealthKit
+        // re-prompts only for types not yet decided, so growing the table is safe.
+        for entry in HealthMetricTypes.all {
+            types.insert(entry.quantityType)
         }
 
         // Stand hours. Required for the appleStandHour background observer in
@@ -306,18 +297,14 @@ class HealthKitService {
 
     // MARK: - Health Metrics
 
-    func fetchHealthMetrics(type: HKQuantityTypeIdentifier, from startDate: Date, anchor: HKQueryAnchor? = nil) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
-        guard let quantityType = HKQuantityType.quantityType(forIdentifier: type) else {
-            throw NSError(domain: "HealthKit", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "Invalid quantity type"
-            ])
-        }
-
+    /// Anchored fetch of one quantity type from the sync table. Scalar samples
+    /// only, so cheap enough to run for every type inside a background wake.
+    func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, from startDate: Date, anchor: HKQueryAnchor? = nil) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
         return try await withCheckedThrowingContinuation { continuation in
             let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
 
             let query = HKAnchoredObjectQuery(
-                type: quantityType,
+                type: entry.quantityType,
                 predicate: predicate,
                 anchor: anchor,
                 limit: HKObjectQueryNoLimit
@@ -332,8 +319,18 @@ class HealthKitService {
                     return
                 }
 
-                let metrics = samples.map { sample in
-                    self.convertQuantitySampleToMetric(sample, type: type)
+                let metrics = autoreleasepool {
+                    samples.compactMap { sample in
+                        self.convertQuantitySampleToMetric(sample, entry: entry)
+                    }
+                }
+
+                // A dropped sample means the table's unit is wrong for this type.
+                // Fail the fetch so the anchor stays put and nothing is lost once
+                // the unit is fixed.
+                if metrics.count != samples.count {
+                    continuation.resume(throwing: HealthKitError.incompatibleUnit(entry.identifier.rawValue))
+                    return
                 }
 
                 continuation.resume(returning: (metrics, newAnchor))
@@ -343,12 +340,20 @@ class HealthKitService {
         }
     }
 
-    private func convertQuantitySampleToMetric(_ sample: HKQuantitySample, type: HKQuantityTypeIdentifier) -> HealthMetricData {
-        let unit = preferredUnit(for: type)
+    /// Returns nil (and logs) if the table's unit doesn't match the sample: a
+    /// wrong unit would otherwise be an uncatchable ObjC exception that kills
+    /// the whole background sync for one bad row. The caller turns any nil
+    /// into a thrown `incompatibleUnit` so the anchor isn't advanced.
+    private func convertQuantitySampleToMetric(_ sample: HKQuantitySample, entry: HealthMetricTypes.Entry) -> HealthMetricData? {
+        let unit = entry.unit
+        guard sample.quantity.is(compatibleWith: unit) else {
+            print("❌ Unit \(unit.unitString) incompatible with \(entry.identifier.rawValue) sample \(sample.quantity)")
+            return nil
+        }
 
         return HealthMetricData(
             healthkitUuid: sample.uuid.uuidString,
-            metricType: type.rawValue,
+            metricType: entry.identifier.rawValue,
             value: sample.quantity.doubleValue(for: unit),
             unit: unit.unitString,
             startDate: Self.iso8601.string(from: sample.startDate),
@@ -358,23 +363,6 @@ class HealthKitService {
             deviceName: sample.device?.name,
             metadata: sample.metadata?.mapValues { "\($0)" }
         )
-    }
-
-    private func preferredUnit(for identifier: HKQuantityTypeIdentifier) -> HKUnit {
-        switch identifier {
-        case .heartRate:
-            return HKUnit.count().unitDivided(by: .minute())
-        case .stepCount:
-            return HKUnit.count()
-        case .bodyMass:
-            return HKUnit.gramUnit(with: .kilo)
-        case .distanceWalkingRunning:
-            return HKUnit.meter()
-        case .activeEnergyBurned:
-            return HKUnit.kilocalorie()
-        default:
-            return HKUnit.count()
-        }
     }
 
     // MARK: - Activity Rings

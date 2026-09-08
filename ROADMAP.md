@@ -190,25 +190,30 @@ empty DB; rollback path, backup script, initdb + seed user all exercised on the 
 Decision: the iOS app should sync **all** available HealthKit data, not a curated subset. What
 gets used (dashboard, heatmap, other apps) is decided in the backend/consumers later.
 
-Today only heart rate + step count are synced (`SyncService.syncHealthMetrics`), though
-`bodyMass`, `distanceWalkingRunning`, `activeEnergyBurned` are already authorized.
-`health_metrics` is generic (`metric_type/value/unit`), so quantity types are ~3 lines each.
+`health_metrics` is generic (`metric_type/value/unit`), so quantity types are one table line each.
 
-1. **Quantity types** (one anchored query each, scalar samples, cheap in background): the three
-   above + restingHeartRate, heartRateVariabilitySDNN, walkingHeartRateAverage, vo2Max,
-   heartRateRecoveryOneMinute, oxygenSaturation, respiratoryRate, appleSleepingWristTemperature,
-   basalEnergyBurned, appleExerciseTime, appleStandTime, flightsClimbed, distanceCycling,
-   distanceSwimming, timeInDaylight, running{Power,Speed,StrideLength,VerticalOscillation,
-   GroundContactTime}, cycling{Power,Cadence,Speed,FunctionalThresholdPower},
-   walking{Speed,StepLength,AsymmetryPercentage,DoubleSupportPercentage}, appleWalkingSteadiness,
-   sixMinuteWalkTestDistance, environmentalAudioExposure, headphoneAudioExposure.
-   Table-drive it: one `[HKQuantityTypeIdentifier: HKUnit]` map replaces `preferredUnit` and the
-   per-type anchor keys. Anchors keyed by identifier string.
+1. [x] **Quantity types** — done 2026-09-08. `ios/.../HealthMetricTypes.swift` is the single table
+   (identifier → `HKUnit`, 43 types: heart, vitals, body, activity totals, running/cycling/walking
+   form, hearing). It drives `readTypes`, the anchored fetch, anchor keys (`anchor.<identifier>`,
+   legacy `heartRateAnchor`/`stepCountAnchor` read as fallback) and the backend `metric_type`.
+   Per-type errors are isolated (one failing type no longer aborts the rest); anchors are saved
+   only after the POST succeeds **with zero rejected rows** (HTTP 207 used to advance the anchor
+   past failed rows — pre-existing bug, fixed); a wrong unit fails that type's fetch (anchor kept)
+   instead of crashing. Deferred from review: `HKObjectQueryNoLimit` still materialises the whole
+   backlog after prolonged POST failures (page it); 43 serial queries per wake is fine while most
+   return empty, but add a wake deadline if observer completion starts timing out.
+   New types start **forward-only** from `lastSyncDate` — see step 4. HealthKit prompts for the
+   new read types the next time the app calls `requestAuthorization` (one-time grant).
+   Observers unchanged (HR/steps/energy/stand/workouts) — every wake syncs all 44 types anyway.
+   Installed on the phone 2026-09-08; NAS `health_metrics` had only 12 rows before (HR/steps since
+   cutover — the historical import never imported metrics). Verify: distinct `metric_type`s grow.
 2. **Sleep** (`HKCategoryTypeSleepAnalysis`): new category-sample fetch; value = stage.
 3. **Workout extras**: `workoutActivities`, workout events (laps/pauses), `allStatistics`,
    effort score (iOS 18); route `course` + `verticalAccuracy`. Needs new tables.
-4. Historical backfill of the new types: raise `historicalImportDays` once more, or extend the
-   import to cover metrics (today it imports workouts + rings only).
+4. Historical backfill of **all** metric types (the NAS has metrics only from the 2026-09-08
+   cutover onward — the import covers workouts + rings only). Per-second series (running/cycling
+   form, HR during workouts) over 1100 days are millions of samples: do it per type, time-windowed,
+   probably via the queue + nightly BGProcessingTask pattern rather than one foreground fetch.
 
 Watch: HR-frequency series grow `health_metrics` fast (217k rows/yr for HR alone). Fine on the NAS.
 
