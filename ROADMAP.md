@@ -232,9 +232,9 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      `syncMetricType` fetches `metricPageSize` (5000) per anchored query, POSTs, saves the anchor,
      repeats until a short page or the wake budget runs out. Workouts fetch is still unbounded
      (metadata only, small). **Trigger, seen on the NAS 15:15 CEST:** AppleExerciseTime holds
-     47,679 rows spanning 2022-05-29 → 2025-09-02 and *nothing newer*; created_at all 11:13Z.
-     The anchor-only query returned the phone's whole history for that type (anchors are a row
-     watermark; history restored from iCloud sits above it — expect the same for other types), the
+     47,679 rows spanning 2022-05-29 → 2025-09-02 and *nothing newer*; latest created_at 11:13Z.
+     The anchor-only query returned the phone's whole history for that type (likely: anchors are
+     a row watermark and history restored from iCloud sits above it — unproven), the
      8 MB batches were cut off by the 30s suspension, the anchor never advanced, and every later
      wake re-fetched the same 47k rows and stalled again (12:09Z wake: 5 hot POSTs, no
      ExerciseTime). Paging + per-page anchor turns that into steady progress across wakes.
