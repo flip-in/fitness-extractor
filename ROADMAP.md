@@ -238,8 +238,8 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      HeartRateRecovery also came back from 2021/2022, DistanceCycling and PhysicalEffort from
      today only, so the pattern is per type and not understood), the
      8 MB batches were cut off by the 30s suspension, the anchor never advanced, and every later
-     wake re-fetched the same 47k rows and stalled again (12:09Z wake: 5 hot POSTs, no
-     ExerciseTime). Paging + per-page anchor turns that into steady progress across wakes.
+     wake re-fetched the same 47k rows and stalled again (12:09Z and 13:51Z wakes: rings + 5 hot
+     POSTs each, no ExerciseTime). Paging + per-page anchor turns that into steady progress across wakes.
      Side effect worth keeping: this *is* the metric backfill (step 4) arriving for free.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
@@ -254,6 +254,8 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
    New types start **forward-only** from `lastSyncDate` — see step 4. HealthKit prompts for the
    new read types the next time the app calls `requestAuthorization` (one-time grant).
    Observers unchanged (HR/steps/energy/stand/workouts) — every wake syncs all 44 types anyway.
+   **Reinstall without launching is safe:** the 14:25 CEST install (fresh-route build) was never
+   opened and the 13:51Z observer wake still fired (rings + hot tier on the NAS).
    Installed on the phone 2026-09-08; NAS `health_metrics` had only 12 rows before (HR/steps since
    cutover — the historical import never imported metrics). Verify: distinct `metric_type`s grow.
 2. **Sleep** (`HKCategoryTypeSleepAnalysis`): new category-sample fetch; value = stage.
