@@ -185,7 +185,34 @@ empty DB; rollback path, backup script, initdb + seed user all exercised on the 
 
 ---
 
-## Next feature: GPS Heatmap
+## Next: collect everything HealthKit has ("health dump") — decided 2026-09-08
+
+Decision: the iOS app should sync **all** available HealthKit data, not a curated subset. What
+gets used (dashboard, heatmap, other apps) is decided in the backend/consumers later.
+
+Today only heart rate + step count are synced (`SyncService.syncHealthMetrics`), though
+`bodyMass`, `distanceWalkingRunning`, `activeEnergyBurned` are already authorized.
+`health_metrics` is generic (`metric_type/value/unit`), so quantity types are ~3 lines each.
+
+1. **Quantity types** (one anchored query each, scalar samples, cheap in background): the three
+   above + restingHeartRate, heartRateVariabilitySDNN, walkingHeartRateAverage, vo2Max,
+   heartRateRecoveryOneMinute, oxygenSaturation, respiratoryRate, appleSleepingWristTemperature,
+   basalEnergyBurned, appleExerciseTime, appleStandTime, flightsClimbed, distanceCycling,
+   distanceSwimming, timeInDaylight, running{Power,Speed,StrideLength,VerticalOscillation,
+   GroundContactTime}, cycling{Power,Cadence,Speed,FunctionalThresholdPower},
+   walking{Speed,StepLength,AsymmetryPercentage,DoubleSupportPercentage}, appleWalkingSteadiness,
+   sixMinuteWalkTestDistance, environmentalAudioExposure, headphoneAudioExposure.
+   Table-drive it: one `[HKQuantityTypeIdentifier: HKUnit]` map replaces `preferredUnit` and the
+   per-type anchor keys. Anchors keyed by identifier string.
+2. **Sleep** (`HKCategoryTypeSleepAnalysis`): new category-sample fetch; value = stage.
+3. **Workout extras**: `workoutActivities`, workout events (laps/pauses), `allStatistics`,
+   effort score (iOS 18); route `course` + `verticalAccuracy`. Needs new tables.
+4. Historical backfill of the new types: raise `historicalImportDays` once more, or extend the
+   import to cover metrics (today it imports workouts + rings only).
+
+Watch: HR-frequency series grow `health_metrics` fast (217k rows/yr for HR alone). Fine on the NAS.
+
+## Then: GPS Heatmap
 
 Research is done and now on `master`: **`docs/heatmap-feature/research.md`**.
 
