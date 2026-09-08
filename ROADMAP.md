@@ -278,6 +278,9 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      the anchor advancing past them. Fix: anchor-only once an anchor exists (as for metrics);
      the anchor key is renamed `workoutsAnchor.v2` so the next wake starts fresh with a 30-day
      lookback and re-syncs the lost workouts (dedupe on the backend). Nothing to do on the phone.
+     **Verified 00:10 CEST 09-09:** first wake on the new build re-sent 30 days of workouts,
+     the Climbing (14:39–16:41Z) and the 16.6 km ride home (17:16–18:32Z) appeared, the ride's
+     route attached in the same wake (fresh-route-first). Never opened the app.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended
