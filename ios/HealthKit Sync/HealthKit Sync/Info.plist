@@ -11,5 +11,12 @@
 	<array>
 		<string>processing</string>
 	</array>
+	<!-- The backend is plain HTTP on a Tailscale (100.x) address, which ATS does
+	     not treat as local. Tailscale encrypts the transport; TLS is out of scope. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
