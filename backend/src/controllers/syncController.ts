@@ -35,13 +35,16 @@ export async function syncWorkouts(req: Request, res: Response): Promise<void> {
 		const pool = getPool();
 		let synced = 0;
 		let skipped = 0;
+		let updated = 0; // existing workouts that gained a route
 		const errors: Array<{ healthkit_uuid: string; error: string }> = [];
 
 		// Process each workout
 		for (const workout of workouts as WorkoutData[]) {
 			const result = await insertWorkout(pool, user_id, workout);
 
-			if (result.success) {
+			if (result.success && result.routeAttached) {
+				updated++;
+			} else if (result.success) {
 				synced++;
 			} else if (result.error === "Duplicate workout") {
 				skipped++;
@@ -60,6 +63,7 @@ export async function syncWorkouts(req: Request, res: Response): Promise<void> {
 				success: false,
 				synced,
 				skipped,
+				updated,
 				errors,
 			});
 			return;
@@ -71,6 +75,7 @@ export async function syncWorkouts(req: Request, res: Response): Promise<void> {
 				success: true,
 				synced,
 				skipped,
+				updated,
 				errors,
 			});
 			return;
@@ -81,6 +86,7 @@ export async function syncWorkouts(req: Request, res: Response): Promise<void> {
 			success: true,
 			synced,
 			skipped,
+			updated,
 			errors: [],
 		});
 	} catch (error) {

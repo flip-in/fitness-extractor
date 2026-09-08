@@ -9,10 +9,26 @@ import Foundation
 import HealthKit
 internal import _LocationEssentials
 
+enum HealthKitError: Error {
+    /// The workout has no HKWorkoutRoute sample (indoor, strength, etc.).
+    case noRoute
+    /// The workout was deleted from HealthKit since we queued it.
+    case workoutNotFound
+}
+
 class HealthKitService {
     static let shared = HealthKitService()
 
     private let healthStore = HKHealthStore()
+
+    /// One formatter for every sample/point conversion. ISO8601DateFormatter is
+    /// thread-safe once configured; constructing one per sample (~217k metrics,
+    /// ~1.7M route points in a full import) was measurable CPU and allocation churn.
+    private static let iso8601: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     // HealthKit data types we want to read
     private let readTypes: Set<HKObjectType> = {
@@ -74,7 +90,13 @@ class HealthKitService {
 
     // MARK: - Workouts
 
-    func fetchWorkouts(from startDate: Date, anchor: HKQueryAnchor? = nil) async throws -> (workouts: [WorkoutData], newAnchor: HKQueryAnchor?) {
+    /// Fetches workouts newer than `anchor` (or all since `startDate` when nil).
+    ///
+    /// `includeRoutes: false` returns metadata only. Routes are the expensive part
+    /// (thousands of CLLocation objects per workout) and the background wake that
+    /// runs the incremental sync has a memory budget roughly an order of magnitude
+    /// below foreground — see `SyncService.backfillRoutes` for how routes catch up.
+    func fetchWorkouts(from startDate: Date, anchor: HKQueryAnchor? = nil, includeRoutes: Bool = true) async throws -> (workouts: [WorkoutData], newAnchor: HKQueryAnchor?) {
         return try await withCheckedThrowingContinuation { continuation in
             let workoutType = HKObjectType.workoutType()
             let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
@@ -99,13 +121,7 @@ class HealthKitService {
                     var workoutDataArray: [WorkoutData] = []
 
                     for workout in workouts {
-                        // Fetch route if available
-                        let route = try? await self.fetchWorkoutRoute(for: workout)
-
-                        // Fetch heart rate statistics for workout
-                        let heartRateStats = try? await self.fetchHeartRateStats(for: workout)
-
-                        let workoutData = await self.convertWorkoutToData(workout, route: route, heartRateStats: heartRateStats)
+                        let workoutData = await self.buildWorkoutData(workout, includeRoute: includeRoutes)
                         workoutDataArray.append(workoutData)
                     }
 
@@ -117,15 +133,51 @@ class HealthKitService {
         }
     }
 
-    private func convertWorkoutToData(_ workout: HKWorkout, route: WorkoutRoute?, heartRateStats: (avg: Double?, max: Double?)? = nil) -> WorkoutData {
-        let iso8601Formatter = ISO8601DateFormatter()
-        iso8601Formatter.formatOptions = [.withInternetDateTime]
+    /// Fetches one workout by UUID, with its route. Used by the route backfill
+    /// queue, which drains workouts one at a time inside background budgets.
+    ///
+    /// Throws `HealthKitError.workoutNotFound` if it's gone from HealthKit and
+    /// `HealthKitError.noRoute` if it never had GPS — both mean "drop from queue".
+    func fetchWorkoutWithRoute(uuid: UUID) async throws -> WorkoutData {
+        let workout: HKWorkout = try await withCheckedThrowingContinuation { continuation in
+            let predicate = HKQuery.predicateForObject(with: uuid)
+            let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: 1, sortDescriptors: nil) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let workout = samples?.first as? HKWorkout {
+                    continuation.resume(returning: workout)
+                } else {
+                    continuation.resume(throwing: HealthKitError.workoutNotFound)
+                }
+            }
+            healthStore.execute(query)
+        }
 
+        // Not `try?` here: the caller needs noRoute to prune the queue.
+        let route = try await fetchWorkoutRoute(for: workout)
+        let heartRateStats = try? await fetchHeartRateStats(for: workout)
+        return autoreleasepool {
+            convertWorkoutToData(workout, route: route, heartRateStats: heartRateStats)
+        }
+    }
+
+    private func buildWorkoutData(_ workout: HKWorkout, includeRoute: Bool) async -> WorkoutData {
+        let route = includeRoute ? try? await fetchWorkoutRoute(for: workout) : nil
+        let heartRateStats = try? await fetchHeartRateStats(for: workout)
+
+        // Drain per-workout autoreleased temporaries (metadata bridging, HK
+        // object accessors) instead of letting them pile up across a long import.
+        return autoreleasepool {
+            convertWorkoutToData(workout, route: route, heartRateStats: heartRateStats)
+        }
+    }
+
+    private func convertWorkoutToData(_ workout: HKWorkout, route: WorkoutRoute?, heartRateStats: (avg: Double?, max: Double?)? = nil) -> WorkoutData {
         return WorkoutData(
             healthkitUuid: workout.uuid.uuidString,
             workoutType: workout.workoutActivityType.name,
-            startDate: iso8601Formatter.string(from: workout.startDate),
-            endDate: iso8601Formatter.string(from: workout.endDate),
+            startDate: Self.iso8601.string(from: workout.startDate),
+            endDate: Self.iso8601.string(from: workout.endDate),
             durationSeconds: Int(workout.duration),
             totalDistanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
             totalEnergyBurnedKcal: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
@@ -196,9 +248,7 @@ class HealthKitService {
                 }
 
                 guard let route = samples?.first as? HKWorkoutRoute else {
-                    continuation.resume(throwing: NSError(domain: "HealthKit", code: -1, userInfo: [
-                        NSLocalizedDescriptionKey: "No route found for workout"
-                    ]))
+                    continuation.resume(throwing: HealthKitError.noRoute)
                     return
                 }
 
@@ -219,8 +269,6 @@ class HealthKitService {
     private func fetchRoutePoints(for route: HKWorkoutRoute) async throws -> [RoutePoint] {
         return try await withCheckedThrowingContinuation { continuation in
             var routePoints: [RoutePoint] = []
-            let iso8601Formatter = ISO8601DateFormatter()
-            iso8601Formatter.formatOptions = [.withInternetDateTime]
 
             let query = HKWorkoutRouteQuery(route: route) { _, locations, done, error in
                 if let error = error {
@@ -228,17 +276,22 @@ class HealthKitService {
                     return
                 }
 
+                // HealthKit delivers the route in chunks of CLLocation (ObjC
+                // objects). Drain each chunk's autoreleased temporaries here rather
+                // than trusting the callback queue to do it before the next chunk.
                 if let locations = locations {
-                    for location in locations {
-                        let point = RoutePoint(
-                            lat: location.coordinate.latitude,
-                            lon: location.coordinate.longitude,
-                            timestamp: iso8601Formatter.string(from: location.timestamp),
-                            altitude: location.altitude,
-                            speed: location.speed >= 0 ? location.speed : nil,
-                            horizontalAccuracy: location.horizontalAccuracy
-                        )
-                        routePoints.append(point)
+                    autoreleasepool {
+                        for location in locations {
+                            let point = RoutePoint(
+                                lat: location.coordinate.latitude,
+                                lon: location.coordinate.longitude,
+                                timestamp: Self.iso8601.string(from: location.timestamp),
+                                altitude: location.altitude,
+                                speed: location.speed >= 0 ? location.speed : nil,
+                                horizontalAccuracy: location.horizontalAccuracy
+                            )
+                            routePoints.append(point)
+                        }
                     }
                 }
 
@@ -291,9 +344,6 @@ class HealthKitService {
     }
 
     private func convertQuantitySampleToMetric(_ sample: HKQuantitySample, type: HKQuantityTypeIdentifier) -> HealthMetricData {
-        let iso8601Formatter = ISO8601DateFormatter()
-        iso8601Formatter.formatOptions = [.withInternetDateTime]
-
         let unit = preferredUnit(for: type)
 
         return HealthMetricData(
@@ -301,8 +351,8 @@ class HealthKitService {
             metricType: type.rawValue,
             value: sample.quantity.doubleValue(for: unit),
             unit: unit.unitString,
-            startDate: iso8601Formatter.string(from: sample.startDate),
-            endDate: iso8601Formatter.string(from: sample.endDate),
+            startDate: Self.iso8601.string(from: sample.startDate),
+            endDate: Self.iso8601.string(from: sample.endDate),
             sourceName: sample.sourceRevision.source.name,
             sourceBundleId: sample.sourceRevision.source.bundleIdentifier,
             deviceName: sample.device?.name,

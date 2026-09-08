@@ -15,6 +15,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Config.example.swift,
+				Info.plist,
 			);
 			target = 5F6D44AA2E9FD7B600F9F378 /* HealthKit Sync */;
 		};
@@ -270,6 +271,7 @@
 				DEVELOPMENT_TEAM = JZ9655V52W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "HealthKit Sync/Info.plist";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app needs to read your HealthKit data to sync it to your personal database.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app does not write health data, but this permission is required by HealthKit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -305,6 +307,7 @@
 				DEVELOPMENT_TEAM = JZ9655V52W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "HealthKit Sync/Info.plist";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app needs to read your HealthKit data to sync it to your personal database.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "This app does not write health data, but this permission is required by HealthKit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

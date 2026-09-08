@@ -12,6 +12,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     private let healthStore = HKHealthStore()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
+        // BGTaskScheduler handlers must be registered before launch finishes.
+        RouteBackfillTask.register()
+        RouteBackfillTask.scheduleIfNeeded()
+
         // Set up background delivery observers
         setupBackgroundObservers()
 

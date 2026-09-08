@@ -53,6 +53,12 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
+
+                    if syncService.pendingRoutes > 0 {
+                        Text("\(syncService.pendingRoutes) GPS routes pending (sync in background)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                 }
                 .padding()
                 .background(

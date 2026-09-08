@@ -3,7 +3,41 @@
 **Started:** 2025-10-11
 **Last active:** 2026-01-22
 **Resumed:** 2026-08-19
-**Current state:** Backend + iOS + dashboard all working. Database wiped. Next feature: GPS heatmap.
+**Current state:** Backend + iOS + dashboard all working; 1100-day history imported locally.
+Background-only sync design landed 2026-09-08 (needs a device rebuild to take effect). Next:
+NAS deployment (spec in `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`), then heatmap.
+
+---
+
+## 2026-09-08 — background-only workout sync
+
+**Goal (user):** never open the app. Everything, including GPS routes, syncs in the background,
+even if older routes take days to arrive.
+
+**Why:** a 1100-day import was jetsam-killed *after* completing (code 9, memory). The same
+code path — `fetchWorkouts` pulling full GPS routes per workout — also ran on every HealthKit
+observer wake, whose memory budget is far below foreground. Hypothesis (not proven): repeated
+background kills are why the workout observer has "needed the app opened" since Oct 2025 while
+the scalar-sample observers (heart rate, steps) worked.
+
+**What changed:**
+
+- Incremental sync sends workout **metadata only** (`includeRoutes: false`) and queues UUIDs in
+  `RouteBackfillQueue` (UserDefaults). Each sync then attaches ≤3 routes, newest first, one
+  request each. A nightly `BGProcessingTask` (`RouteBackfillTask`, requires charger + network)
+  sweeps the rest. New `Info.plist` carries `UIBackgroundModes: processing` and the task id.
+- Backend `insertWorkout`: a duplicate that arrives *with* a route for a row that has none now
+  attaches it (reported as `updated`); other duplicates still skip. Verified live: metadata
+  POST → `synced 1`, re-POST with route → `updated 1`, third → `skipped 1`, one route row.
+- Memory hygiene: `autoreleasepool` around per-workout conversion and each `HKWorkoutRouteQuery`
+  chunk; one shared `ISO8601DateFormatter` instead of one per sample/point (~1.9M constructions
+  in the full import).
+- Historical import (manual, foreground) unchanged: still inline routes, still the one-off tool.
+
+**Not done / to verify on device:** rebuild from Xcode; watch `pendingRoutes` in the UI drop
+without opening the app again; confirm `updated` counts on the backend. Force-quitting the app
+disables BGTaskScheduler until the next launch — leave it in the switcher.
+`totalEnergyBurned` iOS 18 deprecation and `urlCache = nil` noise fix still deferred.
 
 ---
 
@@ -21,9 +55,9 @@ Nothing was lost that matters: the old DB only ever held a 90-day window importe
 and HealthKit on the iPhone is the source of truth for all of it. A fresh import is strictly
 better than restoring the old volume would have been — no reason to chase the old machine.
 
-**Rebuilt 2026-09-07.** 653 workouts (303 in 2025, 350 in 2026), 433 GPS routes, 401 activity
-rings, 217k health metrics, spanning 2025-08-04 → 2026-09-07 — the full 400-day window. Dashboard
-verified serving it.
+**Rebuilt 2026-09-07/08.** After a 1100-day import: 1343 workouts, 944 GPS routes, 1.69M route
+points, 846 activity rings, 217k health metrics, spanning 2023-09-03 → 2026-09-08. The 2024-Q1/Q2
+workout gap has data on both sides — genuine absence, not truncation. Dashboard verified.
 
 To rebuild again from scratch:
 
@@ -96,8 +130,8 @@ Treat the `docs/` trio as probably-stale until confirmed.
 - [x] Manual sync + configurable historical import UI
 - [x] Activity types incl. surfing, skateboarding, climbing
 
-**Known limitation:** iOS deprioritises the workout observer. Health metrics sync passively;
-workouts generally need the app opened. Accepted for personal use.
+**Former limitation:** workouts "needed the app opened". Suspected cause was the route fetch
+blowing the background memory budget; addressed 2026-09-08 (see top). Verify on device.
 
 ## Phase 3: Web Dashboard — 🟡 7/8
 
@@ -117,12 +151,15 @@ page) or drop the dependency.
 
 **Fixes landed 2026-01-21/22:** heart rate aggregation, timezone display.
 
-## Phase 4: Deployment — ⏳ Not started
+## Phase 4: Deployment — 🟡 Designing
 
-`docker-compose.yml` still has the `backend` and `dashboard` services commented out. That's the
-blocker for everything here.
+Design: `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`. Sections 1–2 (single `app`
+image serving API + dashboard same-origin, SSD pgdata bind mount, nightly dumps to other media)
+approved. Section 3 (deploy/rollback/cutover/verification) still to design.
 
-- [ ] Uncomment + build backend and dashboard services
+- [ ] Section 3 design + implementation plan
+- [ ] Root multi-stage Dockerfile + `.dockerignore`; compose `db` + `app`
+- [ ] `002_seed_user.sql` (fresh DB has no user row; every import FK-fails without it)
 - [ ] Deploy to Synology NAS via Docker Compose
 - [ ] Tailscale access
 - [ ] Point iOS `apiBaseURL` at the NAS Tailscale IP (currently a LAN IP that changes)
@@ -160,7 +197,8 @@ sidebar pagination, layer blending, mobile layout, client-side caching.
 ## Backlog
 
 - Sleep tracking (`HKCategoryTypeSleep`)
-- Background App Refresh for more reliable workout sync
+- ~~Background App Refresh for more reliable workout sync~~ — BGProcessingTask landed 2026-09-08
+- Historical import could reuse the metadata-first + queue path to cut its peak memory
 - Local notifications as sync reminders
 - Data export
 - Multi-user support

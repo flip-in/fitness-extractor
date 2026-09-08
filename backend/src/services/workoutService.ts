@@ -29,12 +29,18 @@ export interface WorkoutData {
 export interface SyncResult {
 	success: boolean;
 	workoutId?: string;
+	/** True when the workout already existed and this call only attached its route. */
+	routeAttached?: boolean;
 	error?: string;
 }
 
 /**
- * Insert a workout into the database
- * Returns success: true if inserted, or error if duplicate/failed
+ * Insert a workout into the database.
+ *
+ * The iOS app syncs workout rows first (cheap, safe inside a background wake) and
+ * sends GPS routes later, one workout at a time. So a duplicate workout that
+ * arrives *with* a route, for a row that has none yet, attaches the route rather
+ * than being skipped. Any other duplicate is skipped unchanged.
  */
 export async function insertWorkout(
 	pool: Pool,
@@ -76,20 +82,37 @@ export async function insertWorkout(
 		];
 
 		const result: QueryResult = await client.query(workoutQuery, workoutValues);
+		const inserted = result.rows.length > 0;
+		const hasRoute = (workout.route?.points?.length ?? 0) > 0;
 
-		// Check if workout was inserted (not a duplicate)
-		if (result.rows.length === 0) {
-			await client.query("ROLLBACK");
-			return {
-				success: false,
-				error: "Duplicate workout",
-			};
+		let workoutId: string;
+		if (inserted) {
+			workoutId = result.rows[0].id;
+		} else {
+			// Duplicate. Only worth continuing if we can attach a missing route.
+			if (!hasRoute) {
+				await client.query("ROLLBACK");
+				return { success: false, error: "Duplicate workout" };
+			}
+
+			const existing: QueryResult = await client.query(
+				`SELECT w.id
+				 FROM workouts w
+				 LEFT JOIN workout_routes r ON r.workout_id = w.id
+				 WHERE w.healthkit_uuid = $1 AND r.id IS NULL`,
+				[workout.healthkit_uuid],
+			);
+
+			if (existing.rows.length === 0) {
+				await client.query("ROLLBACK");
+				return { success: false, error: "Duplicate workout" };
+			}
+
+			workoutId = existing.rows[0].id;
 		}
 
-		const workoutId = result.rows[0].id;
-
 		// Insert route if provided
-		if (workout.route?.points && workout.route.points.length > 0) {
+		if (hasRoute && workout.route) {
 			const points = workout.route.points;
 
 			// Calculate bounding box
@@ -121,6 +144,7 @@ export async function insertWorkout(
 		return {
 			success: true,
 			workoutId,
+			routeAttached: !inserted,
 		};
 	} catch (error) {
 		await client.query("ROLLBACK");

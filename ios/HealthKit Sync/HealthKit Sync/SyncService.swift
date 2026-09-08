@@ -17,9 +17,11 @@ class SyncService: ObservableObject {
     @Published var lastSyncDate: Date?
     @Published var syncStatus = "Not synced"
     @Published var syncError: String?
+    @Published var pendingRoutes = RouteBackfillQueue.shared.count
 
     private let healthKit = HealthKitService.shared
     private let api = APIClient.shared
+    private let routeQueue = RouteBackfillQueue.shared
 
     // UserDefaults keys for storing anchors
     private let workoutsAnchorKey = "workoutsAnchor"
@@ -58,7 +60,7 @@ class SyncService: ObservableObject {
                 ])
             }
 
-            // Sync workouts
+            // Sync workouts (metadata only; routes queue up for backfill)
             try await syncWorkouts()
 
             // Sync health metrics
@@ -86,7 +88,59 @@ class SyncService: ObservableObject {
             }
         }
 
+        // Routes last, after the cheap work has landed: a few per wake keeps each
+        // wake inside its budget, and the nightly task sweeps whatever is left.
+        _ = await backfillRoutes(limit: RouteBackfillQueue.perSyncLimit)
+        RouteBackfillTask.scheduleIfNeeded()
+
         isSyncing = false
+    }
+
+    /// Attaches GPS routes to workouts already synced without them, newest first.
+    ///
+    /// One workout per request, so a failure mid-way loses nothing: the queue
+    /// entry is only removed after the backend acknowledges. A network error stops
+    /// the pass (the rest will still be there next wake); a workout with no route,
+    /// or one deleted from HealthKit, is dropped from the queue.
+    ///
+    /// Returns the number of routes sent.
+    @discardableResult
+    func backfillRoutes(limit: Int, shouldContinue: () -> Bool = { true }) async -> Int {
+        var sent = 0
+
+        for uuidString in routeQueue.next(limit) {
+            guard shouldContinue() else { break }
+
+            guard let uuid = UUID(uuidString: uuidString) else {
+                routeQueue.remove(uuidString)
+                continue
+            }
+
+            do {
+                let workout = try await healthKit.fetchWorkoutWithRoute(uuid: uuid)
+                let response = try await api.syncWorkouts([workout])
+                routeQueue.remove(uuidString)
+                sent += 1
+
+                if Config.debugLogging {
+                    print("🗺️ Route attached for \(uuidString): updated \(response.updated ?? 0), skipped \(response.skipped ?? 0)")
+                }
+            } catch let error as HealthKitError {
+                // noRoute / workoutNotFound: nothing to send, ever.
+                routeQueue.remove(uuidString)
+                if Config.debugLogging {
+                    print("🗺️ Dropped \(uuidString) from route queue: \(error)")
+                }
+            } catch {
+                if Config.debugLogging {
+                    print("❌ Route backfill stopped: \(error)")
+                }
+                break
+            }
+        }
+
+        pendingRoutes = routeQueue.count
+        return sent
     }
 
     func performHistoricalImport() async {
@@ -152,7 +206,9 @@ class SyncService: ObservableObject {
         let anchor = loadAnchor(forKey: workoutsAnchorKey)
         let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
 
-        let (workouts, newAnchor) = try await healthKit.fetchWorkouts(from: startDate, anchor: anchor)
+        // Metadata only. This runs inside HealthKit observer wakes, where the
+        // memory budget is far below foreground; routes follow via backfillRoutes.
+        let (workouts, newAnchor) = try await healthKit.fetchWorkouts(from: startDate, anchor: anchor, includeRoutes: false)
 
         if !workouts.isEmpty {
             let response = try await api.syncWorkouts(workouts)
@@ -160,6 +216,10 @@ class SyncService: ObservableObject {
             if Config.debugLogging {
                 print("📊 Workouts: synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
             }
+
+            // Queue every one; workouts without GPS drop out on first attempt.
+            routeQueue.enqueue(workouts.map { $0.healthkitUuid })
+            pendingRoutes = routeQueue.count
         }
 
         // Save new anchor
