@@ -37,14 +37,19 @@ class APIClient {
     private let apiKey: String
     private let session: URLSession
 
+    /// Per-request timeout, set by `SyncService` for the run in progress: an
+    /// observer wake (≈30s window, nothing can interrupt an in-flight request)
+    /// keeps it at the wake budget; unbounded runs (Sync Now, nightly) get 120s of
+    /// headroom for a slow NAS. 30s timed out on 5000-row pages while the backend
+    /// inserted row by row (2026-09-08); it is bulk now.
+    var requestTimeout: TimeInterval = SyncService.wakeBudget
+
     private init() {
         self.baseURL = Config.apiBaseURL
         self.apiKey = Config.apiKey
 
         let config = URLSessionConfiguration.default
-        // 30s timed out on 5000-row metric pages while the backend inserted row by
-        // row (2026-09-08); the backend is bulk now, this is headroom for a slow NAS.
-        config.timeoutIntervalForRequest = 120
+        config.timeoutIntervalForRequest = 120 // ceiling; per-request value below governs
         config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
     }
@@ -61,6 +66,7 @@ class APIClient {
         }
 
         var request = URLRequest(url: url)
+        request.timeoutInterval = requestTimeout
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")

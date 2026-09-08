@@ -259,8 +259,11 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      logged 200 after the phone had given up, so anchors never advanced for backlog types.
      `insertHealthMetrics` now does a multi-row `INSERT … ON CONFLICT DO NOTHING` in 1000-row
      chunks, falling back to per-row for a chunk that fails so HTTP 207 still names the bad row.
-     Measured locally: 5000 fresh rows 1.5s (was >30s), 5000 dupes 0.1s. Phone request timeout
-     30s → 120s as headroom. Also: an empty metrics array returned 500 (0 === 0); now 200.
+     Measured locally: 5000 fresh rows 1.5s (was >30s), 5000 dupes 0.1s. Phone request timeout is
+     per run: the wake budget (20s) on observer wakes, 120s on unbounded runs (pi review: a
+     flat 120s could hold a 30s wake hostage). Observer runs also yield while Sync Now is
+     waiting (pi review: a delivery burst could starve it). Empty metrics array returned 500
+     (0 === 0); now 200.
      **Needs a NAS deploy** (backend change) — the phone build is already installed.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an

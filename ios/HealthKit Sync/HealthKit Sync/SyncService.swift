@@ -101,10 +101,20 @@ class SyncService: ObservableObject {
             }
             return
         }
+        // A budgeted (observer) run yields while Sync Now is waiting its turn:
+        // otherwise a burst of HealthKit deliveries can keep grabbing the slot
+        // during the 1s poll gap. The unbounded run covers everything anyway.
+        if budget != nil && foregroundSyncRequested {
+            if Config.debugLogging {
+                logSync("⏭️ Observer sync yielding to Sync Now")
+            }
+            return
+        }
 
         isSyncing = true
         syncError = nil
         syncStatus = "Syncing..."
+        api.requestTimeout = budget ?? 120
 
         let deadline = budget.map { Date(timeIntervalSinceNow: $0) }
         let withinBudget: () -> Bool = {
