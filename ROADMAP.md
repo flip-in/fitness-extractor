@@ -153,13 +153,16 @@ page) or drop the dependency.
 
 ## Phase 4: Deployment — 🟡 Designing
 
-Design: `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`. Sections 1–2 (single `app`
-image serving API + dashboard same-origin, SSD pgdata bind mount, nightly dumps to other media)
-approved. Section 3 (deploy/rollback/cutover/verification) still to design.
+Design approved 2026-09-08: `docs/superpowers/specs/2026-09-08-nas-deployment-design.md`. Single
+`app` image (API + dashboard same-origin), built on the Mac for amd64 and shipped over a
+restricted SSH deploy key to `/volume2/docker/fitness-extractor/` on ceres (DS423+); pgdata on the
+SSD, nightly dumps to volume1. Deploy key installed and tested 2026-09-08.
 
-- [ ] Section 3 design + implementation plan
-- [ ] Root multi-stage Dockerfile + `.dockerignore`; compose `db` + `app`
+- [ ] Implementation plan (writing-plans)
+- [ ] Root multi-stage Dockerfile + `.dockerignore`; `docker-compose.nas.yml`; backend env-only config
+- [ ] `scripts/deploy.sh`, `receive-deploy.sh`, `backup.sh`; smoke test `--allow-empty`
 - [ ] `002_seed_user.sql` (fresh DB has no user row; every import FK-fails without it)
+- [ ] Bootstrap on NAS, first deploy, cutover, verification (spec §3.3–3.5)
 - [ ] Deploy to Synology NAS via Docker Compose
 - [ ] Tailscale access
 - [ ] Point iOS `apiBaseURL` at the NAS Tailscale IP (currently a LAN IP that changes)

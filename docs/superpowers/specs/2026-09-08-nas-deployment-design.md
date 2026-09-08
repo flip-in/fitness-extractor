@@ -1,12 +1,17 @@
 # NAS Deployment Design
 
 **Date:** 2026-09-08
-**Status:** Sections 1–2 approved in conversation. Section 3 not yet designed.
+**Status:** All sections approved 2026-09-08. Ready for an implementation plan.
 **Supersedes:** the commented-out `backend`/`dashboard` stubs in `docker-compose.yml`.
 
 ## Context
 
-- Deploys via SSH + `docker compose` on the Synology. Tailscale already installed and working.
+- Target: Synology DS423+ ("ceres"), Celeron J4125 x86_64, 18GB RAM, DSM. Docker 24 + Compose
+  v2.20 usable as user `Oberon` **without sudo** (socket is world-writable). **No git on the host.**
+  `docker` lives at `/usr/local/bin/docker`, which is *not* on PATH for non-interactive SSH.
+  Tailscale IP `100.121.150.120`; SSH via `~/.ssh/config` alias `ceres` (port 5555).
+- Existing convention for homebrew apps: one folder per app under `/volume2/docker/` (mealie,
+  plex, syncthing, …). We follow it: `/volume2/docker/fitness-extractor/`.
 - No Dockerfiles exist yet. `docker-compose.yml` runs only `db`.
 - HealthKit on the phone is the source of truth. Imports are idempotent
   (`ON CONFLICT healthkit_uuid`), so the DB is fully reconstructible. This is why the backup
@@ -73,8 +78,9 @@ Publish on `0.0.0.0:3000`: LAN speed at home, Tailscale when away. Tighter alter
 
 ### Backups
 
-- Nightly `pg_dump -Fc` to `/volume1/...` — **different physical media** so an SSD failure
-  doesn't take the backups with it.
+- Nightly `pg_dump -Fc` to `/volume1/homes/Oberon/backups/fitness-extractor/` — **different
+  physical media** so an SSD failure doesn't take the backups with it. (Chosen over a new shared
+  folder: exists already, zero DSM clicks.)
 - 14 days retained.
 - Driven by **DSM Task Scheduler** (not a cron container): visible in DSM, survives container
   churn, can email on failure. Command shape:
@@ -107,24 +113,120 @@ phone covers the last-24h window.
 **Skip it.** Point the phone at the NAS and import fresh. One less moving part, and it validates
 the deployment end to end.
 
-## Section 3 — Deploy workflow, cutover, verification (NOT YET DESIGNED)
+## Section 3 — Deploy workflow, rollback, cutover, verification (approved)
 
-To be brainstormed and approved before implementation. Must cover:
+### Decision: build on the Mac, ship the image (option "c")
 
-- Deploy: `ssh nas 'cd /volume2/docker/fitness-extractor && git pull && docker compose up -d --build'`
-  or equivalent; where the repo lives on the NAS; who owns the checkout.
-- Rollback: previous image tag / `git checkout <sha> && up --build`.
-- Health checks: compose `healthcheck` on `app` hitting `/api/health`; `depends_on: condition:
-  service_healthy` on `db`.
-- Deploy gate: `./scripts/smoke-test.py http://<nas>:3000` (13/13 currently passing locally).
-- Cutover: update `ios/.../Config.swift` `apiBaseURL` to the NAS Tailscale address, rebuild
-  from Xcode, run "Import Last N Days" with `historicalImportDays` raised, then set it back to 90.
-- Verification: row counts in DB match a laptop import of the same window; dashboard loads over
-  Tailscale from off-network; background metric sync lands overnight.
-- Browser homepage → dashboard (ROADMAP Phase 4 item).
+Considered: (a) git clone + build on the NAS, (b) rsync source + build on NAS, (c) build on Mac
+and `docker save | ssh docker load`, (d) GitHub Actions → registry. Chose **(c)**:
+
+- No git or Node on the NAS host (there is none), and no slow `vite build` on a J4125.
+- NAS holds only compose, `.env`, a receiver script and pgdata. Nothing to debug there.
+- Rollback is "start an older tag that's already on the NAS".
+- (d) would bake `VITE_API_KEY` into a registry image; rejected in Section 1.
+
+Cost: deploys happen from a machine with the repo + Docker (the Mac), not from a phone.
+
+### 3.1 Deploy flow — `scripts/deploy.sh` (runs on the Mac)
+
+1. Refuse if the working tree is dirty or the branch isn't `master`. Every deploy is a commit,
+   so a rollback target is always a sha.
+2. `TAG=$(git rev-parse --short HEAD)`.
+   `docker buildx build --platform linux/amd64 --load -t fitness-extractor:$TAG
+   --build-arg VITE_API_KEY --build-arg VITE_MAPBOX_TOKEN .` — args read from the root `.env`.
+3. Build one tar stream on stdin — `image.tar.gz` (`docker save | gzip`), `docker-compose.yml`
+   (from `docker-compose.nas.yml`), `receive-deploy.sh`, `backup.sh` — and pipe it to
+   `ssh -i "$FITNESS_DEPLOY_KEY" -o IdentitiesOnly=yes ceres "$TAG"`. The remote command string
+   is ignored by sshd (forced command, below); the receiver reads the tag from
+   `$SSH_ORIGINAL_COMMAND`. A single stream because the forced command rules out `scp`; bundling
+   compose + scripts keeps them in lockstep with the image.
+4. Wait up to 60s for `http://100.121.150.120:3000/api/health` → 200.
+5. `scripts/smoke-test.py http://100.121.150.120:3000`. On failure: print the previous tag and
+   the exact rollback command, exit non-zero. **No auto-rollback** (decided: you run this by hand
+   and will see it).
+
+`FITNESS_DEPLOY_KEY` defaults to `~/.ssh/fitness-deploy`.
+
+### 3.1a Receiver — `/volume2/docker/fitness-extractor/receive-deploy.sh` (runs on the NAS)
+
+- Parses `$SSH_ORIGINAL_COMMAND`; accepts only `^[0-9a-f]{7,12}$`, rejects anything else.
+- If stdin has data: extract the tar into the app folder (compose + scripts overwrite in place;
+  the *next* deploy runs the new receiver), then `gunzip < image.tar.gz | /usr/local/bin/docker load`
+  and delete the archive. If stdin is empty, the tag must already exist locally (a rollback).
+- Records the currently running tag as "previous" (printed back to the caller), writes
+  `TAG=<tag>` into `.env`, runs `/usr/local/bin/docker compose up -d --remove-orphans`.
+- Prunes `fitness-extractor:*` images beyond the newest 3.
+- Absolute paths throughout: non-interactive DSM SSH has no `/usr/local/bin` in PATH.
+
+The NAS compose file uses `image: fitness-extractor:${TAG}` — **no `build:`**. The repo keeps a
+separate `docker-compose.nas.yml` for this; the root `docker-compose.yml` stays the laptop dev
+file.
+
+### 3.1b SSH: dedicated, restricted deploy key
+
+Requirement: interactive `ssh ceres` stays password-only; only deploys are passwordless.
+
+- Mac: `~/.ssh/fitness-deploy` (ed25519, no passphrase), **not** in ssh-agent, **not** referenced
+  by `~/.ssh/config`. Only `deploy.sh` uses it via `-i … -o IdentitiesOnly=yes`.
+  *Installed 2026-09-08 and tested (`BatchMode` login works; plain `ssh ceres` still prompts).*
+- NAS `~/.ssh/authorized_keys` line: `restrict,command="/volume2/docker/fitness-extractor/receive-deploy.sh" ssh-ed25519 …`.
+  `restrict` = no PTY, no forwarding. `command=` = the key can run the receiver and nothing else.
+  The `command=` part is added once the receiver exists (currently `restrict` only).
+- Lost Mac: the key can push an image and start it on the NAS — not a shell, but revoke at once
+  by deleting the line (password SSH or DSM). FileVault makes the key unreadable without login.
+- New machine: generate its own key, append its own line with the same prefix. One line per
+  machine; revoke per line.
+- DSM gotcha handled: home dir must be `755` and `~/.ssh` `700` or sshd silently ignores keys.
+
+### 3.2 Health checks & rollback
+
+- `db`: existing `pg_isready` healthcheck.
+- `app`: `depends_on: db: condition: service_healthy`; own healthcheck
+  `wget -qO- http://localhost:3000/api/health` every 30s (the endpoint also proves DB
+  connectivity). `restart: unless-stopped` on both.
+- Backend config: today `backend/src/index.ts` exits if `../.env` is missing. Change to: load
+  `.env` if present, otherwise use the process environment; keep the required-variable check.
+- Rollback: `ssh -i ~/.ssh/fitness-deploy ceres <prev-tag>` with no stdin — same receiver, no
+  upload. No schema migrations are planned; if one ever lands, its plan owns rollback.
+
+### 3.3 First-time bootstrap (once, in the ceres shell)
+
+1. `mkdir -p /volume2/docker/fitness-extractor/pgdata /volume1/homes/Oberon/backups/fitness-extractor`
+   then `sudo chown 999:999 /volume2/docker/fitness-extractor/pgdata` (postgres uid).
+2. Place `docker-compose.yml` (from `docker-compose.nas.yml`), `receive-deploy.sh`, `backup.sh`,
+   and a hand-written `.env` (`DB_PASSWORD`, `API_KEY`, `TAG`) in that folder. Secrets are typed
+   in once by hand; `deploy.sh` never transmits them.
+3. `backend/migrations` mounted at `/docker-entrypoint-initdb.d`; new `002_seed_user.sql` inserts
+   `00000000-0000-0000-0000-000000000001`. Runs only when pgdata is empty.
+4. DSM Task Scheduler → user-defined script, user `Oberon`, daily 03:00, email on error:
+   `/volume2/docker/fitness-extractor/backup.sh` = `docker exec fitness-db pg_dump -U postgres -Fc fitness > …/fitness-$(date +%F).dump`
+   + `find … -name '*.dump' -mtime +14 -delete`.
+5. Add `command=` to the `authorized_keys` line.
+6. Optional: point Hyper Backup at `backups/fitness-extractor/`.
+
+### 3.4 Cutover
+
+1. First `./scripts/deploy.sh`. Fresh pgdata self-migrates and seeds the user. The smoke test
+   must pass against an **empty** DB: add `--allow-empty` (today it fails with "no workouts to
+   test against").
+2. Phone: `Config.swift` → `apiBaseURL = "http://100.121.150.120:3000"`,
+   `historicalImportDays = 1100`; rebuild from Xcode; tap Import once (the accepted foreground
+   exception). Then set the constant back to 90.
+3. Laptop `fitness-db` stays as the dev DB. No data migration (Section 2).
+4. Browser homepage → `http://100.121.150.120:3000`.
+
+### 3.5 Verification — done when all are true
+
+- `smoke-test.py` 13/13 against the NAS with data.
+- Row counts match the laptop DB: 1343 workouts / 944 routes / 846 rings, ± today's activity.
+- Dashboard loads over Tailscale off-LAN (phone hotspot).
+- Next morning, without opening the app: `pendingRoutes` on the phone has dropped and backend logs
+  show `updated` counts. Proves M6 and the background-only sync together.
+- A dump appears after the first scheduled backup; restore drill: `pg_restore` into a scratch
+  container, compare row counts.
 
 ## Out of scope
 
+- Auto-rollback, TLS / reverse proxy, container registry, migration runner, multi-user.
 - Dashboard vulnerability cleanup (vite 7→8, plugin-react 5→6): build-time only, never reaches
   the runtime image. Leave until deployment is stable.
-- Multi-user, TLS, reverse proxy: Tailscale is the boundary.
