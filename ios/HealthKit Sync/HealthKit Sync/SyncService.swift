@@ -18,6 +18,9 @@ class SyncService: ObservableObject {
     @Published var syncStatus = "Not synced"
     @Published var syncError: String?
     @Published var pendingRoutes = RouteBackfillQueue.shared.count
+    /// True from a Sync Now tap until its unbounded run finishes (including
+    /// the wait for an in-flight observer sync). Drives the button's disabled state.
+    @Published var foregroundSyncRequested = false
 
     private let healthKit = HealthKitService.shared
     private let api = APIClient.shared
@@ -43,6 +46,12 @@ class SyncService: ObservableObject {
     /// is ~3.5 days of per-minute samples and a few hundred KB per POST.
     private static let metricPageSize = 5000
 
+    /// Pages per type per *budgeted* run (observer wake). Seen 2026-09-08: an
+    /// ExerciseTime backlog took 5 pages × 4s and ate the whole 20s wake, so the
+    /// other hot types and the route step never ran. Two pages (~8s) leaves room;
+    /// unbounded runs (Sync Now, nightly) page to the end. Decision: user, 2026-09-08.
+    private static let budgetedPageCap = 2
+
     /// Pre-table anchor keys (2025-10 → 2026-09). Read once as a fallback so the
     /// first run after upgrading doesn't re-fetch HR/steps from `lastSyncDate`.
     private let legacyAnchorKeys: [HKQuantityTypeIdentifier: String] = [
@@ -67,6 +76,24 @@ class SyncService: ObservableObject {
     /// `allMetrics`: sync every metric type. Wakes pass false and get only the
     /// hot tier, plus the workout tier when this wake synced a new workout —
     /// see `HealthMetricTypes.Tier`.
+    /// Sync Now. HealthKit fires every observer the moment the app launches, so
+    /// right after opening the app a budgeted observer sync is usually already
+    /// running and a plain `performFullSync` call was a silent no-op (2026-09-08:
+    /// two taps, two 20s observer runs, no route step). Wait it out, then run
+    /// unbounded. Main-actor: no suspension between the check and the run, so an
+    /// observer can't slip in between.
+    func performForegroundSync() async {
+        guard !foregroundSyncRequested else { return }
+        foregroundSyncRequested = true
+        defer { foregroundSyncRequested = false }
+
+        while isSyncing {
+            syncStatus = "Waiting for background sync to finish…"
+            try? await Task.sleep(for: .seconds(1))
+        }
+        await performFullSync(budget: nil, allMetrics: true)
+    }
+
     func performFullSync(budget: TimeInterval? = SyncService.wakeBudget, allMetrics: Bool = false, shouldContinue: @escaping () -> Bool = { true }) async {
         guard !isSyncing else {
             if Config.debugLogging {
@@ -116,7 +143,11 @@ class SyncService: ObservableObject {
             var tiers: Set<HealthMetricTypes.Tier> = [.hot]
             if newWorkouts > 0 { tiers.insert(.workout) }
             if allMetrics { tiers = [.hot, .workout, .nightly] }
-            try await syncHealthMetrics(HealthMetricTypes.entries(in: tiers), shouldContinue: withinBudget)
+            try await syncHealthMetrics(
+                HealthMetricTypes.entries(in: tiers),
+                maxPages: budget == nil ? Int.max : Self.budgetedPageCap,
+                shouldContinue: withinBudget
+            )
 
             // Update last sync date
             let now = Date()
@@ -321,7 +352,7 @@ class SyncService: ObservableObject {
     ///
     /// A type with no anchor yet (newly added to the table) starts from
     /// `lastSyncDate`: forward-only. History for new types is ROADMAP step 4.
-    private func syncHealthMetrics(_ entries: [HealthMetricTypes.Entry], shouldContinue: @escaping () -> Bool) async throws {
+    private func syncHealthMetrics(_ entries: [HealthMetricTypes.Entry], maxPages: Int, shouldContinue: @escaping () -> Bool) async throws {
         let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
 
         var firstError: Error?
@@ -335,7 +366,7 @@ class SyncService: ObservableObject {
                 for entry in chunk {
                     group.addTask { @MainActor in
                         do {
-                            try await self.syncMetricType(entry, from: startDate, shouldContinue: shouldContinue)
+                            try await self.syncMetricType(entry, from: startDate, maxPages: maxPages, shouldContinue: shouldContinue)
                             return (entry.identifier.rawValue, nil)
                         } catch {
                             return (entry.identifier.rawValue, error)
@@ -364,7 +395,7 @@ class SyncService: ObservableObject {
     /// Pages through the backlog `metricPageSize` samples at a time, persisting
     /// the anchor after each page lands, so a partial pass (budget spent, crash,
     /// network drop) keeps what it already shipped and resumes where it stopped.
-    private func syncMetricType(_ entry: HealthMetricTypes.Entry, from startDate: Date, shouldContinue: @escaping () -> Bool) async throws {
+    private func syncMetricType(_ entry: HealthMetricTypes.Entry, from startDate: Date, maxPages: Int, shouldContinue: @escaping () -> Bool) async throws {
         var anchor = loadAnchor(forKey: entry.anchorKey)
             ?? legacyAnchorKeys[entry.identifier].flatMap { loadAnchor(forKey: $0) }
 
@@ -381,10 +412,10 @@ class SyncService: ObservableObject {
             anchor = newAnchor
             // Short page = caught up. No anchor = can't page safely; stop too.
             guard metrics.count == Self.metricPageSize, newAnchor != nil else { return }
-        } while shouldContinue()
+        } while page < maxPages && shouldContinue()
 
         if Config.debugLogging {
-            logSync("⏱️ \(entry.identifier.rawValue): backlog continues after \(page) pages; resumes next wake")
+            logSync("⏱️ \(entry.identifier.rawValue): backlog continues after \(page) pages; resumes next run")
         }
     }
 

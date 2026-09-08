@@ -241,6 +241,17 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      wake re-fetched the same 47k rows and stalled again (12:09Z and 13:51Z wakes: rings + 5 hot
      POSTs each, no ExerciseTime). Paging + per-page anchor turns that into steady progress across wakes.
      Side effect worth keeping: this *is* the metric backfill (step 4) arriving for free.
+     **Confirmed working 16:12 CEST** from the unified log (`logSync` lines): 5 pages/run, page 5
+     of the second run shipped 2321 new rows past 2025-09-02.
+   - **Sync Now was a silent no-op after launch** (found 16:12 CEST): HealthKit fires every
+     observer when the app launches, so a 20s-budget observer sync is already running when the
+     button is tapped and `performFullSync` bails on `isSyncing`. Fix (user: "A"):
+     `performForegroundSync()` waits for the in-flight run, then runs unbounded; the button is
+     disabled by `foregroundSyncRequested` instead of `isSyncing`.
+   - **Budgeted runs cap paging at 2 pages/type** (`budgetedPageCap`, user decision): a backlog
+     took 5 × 4s and starved the other hot types and the end-of-wake route step. Unbounded runs
+     still page to the end. This is also why the lunchtime ride's route (queued by the old build,
+     not "fresh") stayed pending through two observer runs: the route step never came up.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended

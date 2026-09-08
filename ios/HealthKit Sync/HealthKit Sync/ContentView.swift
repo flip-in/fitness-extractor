@@ -71,7 +71,7 @@ struct ContentView: View {
                 VStack(spacing: 15) {
                     Button(action: {
                         Task {
-                            await syncService.performFullSync(budget: nil, allMetrics: true) // foreground: no wake limit
+                            await syncService.performForegroundSync() // waits out an observer run, then unbounded
                         }
                     }) {
                         HStack {
@@ -85,7 +85,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .cornerRadius(10)
                     }
-                    .disabled(syncService.isSyncing)
+                    .disabled(syncService.foregroundSyncRequested)
 
                     Button(action: {
                         Task {
