@@ -83,6 +83,13 @@ class HealthKitService {
 
     /// Fetches workouts newer than `anchor` (or all since `startDate` when nil).
     ///
+    /// `startDate` applies only to the first fetch. With an anchor it alone defines
+    /// "new": combining it with a start-date predicate silently dropped every workout
+    /// that *started* before the previous successful sync but was saved after it —
+    /// i.e. any workout longer than the wake interval, or delivered late by the watch
+    /// (2026-09-08 evening: two climbing sessions and the ride home vanished; the
+    /// anchor had moved past them). Same fix as `fetchHealthMetrics`.
+    ///
     /// `includeRoutes: false` returns metadata only. Routes are the expensive part
     /// (thousands of CLLocation objects per workout) and the background wake that
     /// runs the incremental sync has a memory budget roughly an order of magnitude
@@ -90,7 +97,9 @@ class HealthKitService {
     func fetchWorkouts(from startDate: Date, anchor: HKQueryAnchor? = nil, includeRoutes: Bool = true) async throws -> (workouts: [WorkoutData], newAnchor: HKQueryAnchor?) {
         return try await withCheckedThrowingContinuation { continuation in
             let workoutType = HKObjectType.workoutType()
-            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+            let predicate = anchor == nil
+                ? HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+                : nil
 
             let query = HKAnchoredObjectQuery(
                 type: workoutType,

@@ -27,7 +27,15 @@ class SyncService: ObservableObject {
     private let routeQueue = RouteBackfillQueue.shared
 
     // UserDefaults keys for storing anchors
-    private let workoutsAnchorKey = "workoutsAnchor"
+    /// `.v2` (2026-09-08): the v1 anchor had been advanced past workouts the old
+    /// anchor+predicate query skipped, so it is abandoned. The first run with no v2
+    /// anchor re-fetches `workoutLookbackDays` of workouts (backend dedupes by UUID)
+    /// and picks up the ones that were lost, without anyone opening the app.
+    private let workoutsAnchorKey = "workoutsAnchor.v2"
+
+    /// First-fetch window for workouts when there is no anchor. Generous on purpose:
+    /// workouts are few and metadata-only, and duplicates are skipped server-side.
+    private static let workoutLookbackDays = 30
     private let lastSyncDateKey = "lastSyncDate"
     /// Wall-clock safety net for a HealthKit observer wake. Measured on device
     /// 2026-09-08: dasd grants a 30s activity window, then suspends the process
@@ -325,7 +333,8 @@ class SyncService: ObservableObject {
     /// Returns the number of workouts sent this pass.
     private func syncWorkouts() async throws -> Int {
         let anchor = loadAnchor(forKey: workoutsAnchorKey)
-        let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        // Only used when there is no anchor yet; see workoutsAnchorKey.
+        let startDate = Calendar.current.date(byAdding: .day, value: -Self.workoutLookbackDays, to: Date()) ?? Date()
 
         // Metadata only. This runs inside HealthKit observer wakes, where the
         // memory budget is far below foreground; routes follow via backfillRoutes.

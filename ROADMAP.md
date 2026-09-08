@@ -265,6 +265,19 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      waiting (pi review: a delivery burst could starve it). Empty metrics array returned 500
      (0 === 0); now 200.
      **Needs a NAS deploy** (backend change) — the phone build is already installed.
+     Deployed 16:45 CEST, 17/17. A foreground Sync Now then drained the backlog: 361k rows, 34
+     types. Types first touched by the anchor-only build got full history (ExerciseTime from
+     2021, RespiratoryRate, HeadphoneAudio from 2019, running form from 2022, FlightsClimbed
+     from 2018…); types that already had a forward-only anchor (HR, steps, energy, distance,
+     stand, HRV, SpO2, resting HR, walking mobility) still have today only → step 4 remains.
+   - **Workouts vanished once syncs got healthy** (found 23:50 CEST): `fetchWorkouts` still
+     combined the anchor with `start_date ≥ lastSyncDate`. While wakes were failing at the end
+     (ExerciseTime timeout) `lastSyncDate` never advanced and this stayed hidden; after the deploy
+     every hourly wake succeeded, the predicate moved forward each hour, and two climbing
+     sessions + the ride home (started before the previous wake, saved after) were skipped with
+     the anchor advancing past them. Fix: anchor-only once an anchor exists (as for metrics);
+     the anchor key is renamed `workoutsAnchor.v2` so the next wake starts fresh with a 30-day
+     lookback and re-syncs the lost workouts (dedupe on the backend). Nothing to do on the phone.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended
