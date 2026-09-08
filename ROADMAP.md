@@ -230,8 +230,15 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      delivers late (most of a workout's HR series). Anchor-only now.
    - ~~Deferred: `HKObjectQueryNoLimit` still materialises the whole backlog~~ — paged 2026-09-08:
      `syncMetricType` fetches `metricPageSize` (5000) per anchored query, POSTs, saves the anchor,
-     repeats until a short page or the wake budget runs out (the 47k-row AppleExerciseTime POST
-     that morning was the trigger). Workouts fetch is still unbounded (metadata only, small).
+     repeats until a short page or the wake budget runs out. Workouts fetch is still unbounded
+     (metadata only, small). **Trigger, seen on the NAS 15:15 CEST:** AppleExerciseTime holds
+     47,679 rows spanning 2022-05-29 → 2025-09-02 and *nothing newer*; created_at all 11:13Z.
+     The anchor-only query returned the phone's whole history for that type (anchors are a row
+     watermark; history restored from iCloud sits above it — expect the same for other types), the
+     8 MB batches were cut off by the 30s suspension, the anchor never advanced, and every later
+     wake re-fetched the same 47k rows and stalled again (12:09Z wake: 5 hot POSTs, no
+     ExerciseTime). Paging + per-page anchor turns that into steady progress across wakes.
+     Side effect worth keeping: this *is* the metric backfill (step 4) arriving for free.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended
