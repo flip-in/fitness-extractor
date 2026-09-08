@@ -37,6 +37,9 @@ ios/Podfile.lock
 # iOS Configuration (contains sensitive data)
 ios/**/Config.swift
 
+# Claude Code worktrees (local checkouts; trip deploy.sh's clean-tree check)
+.claude/worktrees/
+
 # IDEs
 .vscode/
 .idea/
