@@ -199,12 +199,29 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
    Per-type errors are isolated (one failing type no longer aborts the rest); anchors are saved
    only after the POST succeeds **with zero rejected rows** (HTTP 207 used to advance the anchor
    past failed rows — pre-existing bug, fixed); a wrong unit fails that type's fetch (anchor kept)
-   instead of crashing. **Same-day fix:** rings now sync *before* metrics — the first build
-   rethrew a metric-type error after the loop, which skipped rings on every wake where any type
-   failed (seen live: 10:41 CEST metrics POSTed, no rings POST, dashboard stuck at 115 kcal).
-   Deferred from review: `HKObjectQueryNoLimit` still materialises the whole
-   backlog after prolonged POST failures (page it); 43 serial queries per wake is fine while most
-   return empty, but add a wake deadline if observer completion starts timing out.
+   instead of crashing.
+
+   **Same-day fixes, from the phone's unified log** (`sudo log collect --device-name` then
+   `log show --predicate 'process == "HealthKit Sync"'` — the app's `print`s are *not* in it, only
+   HealthKit's own `com.apple.HealthKit:query` lines, which name each type and its timing):
+   - An observer wake is a **30s dasd window** (`com.apple.healthkit.background-delivery.<bundle>`,
+     "Utility, 60s … runtime limit 180" but the process was suspended at +31s). Anchored queries
+     take **1–7s each** in the background regardless of sample count (AppleExerciseTime 7s,
+     AppleStandTime 4s, HRV 3.6s), so 43 serial queries never finished: the 10:41 CEST wake was
+     suspended at type 41 and rings — which ran last — never POSTed (dashboard stuck at 115 kcal).
+     Fix (user decision, 2026-09-08): metric types are **tiered** in `HealthMetricTypes`. Every
+     wake: workouts → rings → *hot* tier (HR, steps, active energy, walking distance, exercise
+     time, stand time; 6 queries, 4 concurrent) → ≤3 routes. A wake that just synced a workout
+     adds the *workout* tier (HR recovery, VO2max, physical effort, running/cycling form,
+     cycling/swimming distance, strokes). The remaining ~23 slow types are *nightly* only. The
+     BGProcessingTask (renamed `NightlySyncTask`, id `…nightly-sync`, always scheduled) runs the
+     unbounded all-tier sync + routes on charger; the foreground button does the same.
+     `SyncService.wakeBudget` (20s) remains as a safety net, not the mechanism.
+   - Anchor + start-date predicate were combined; with an anchor the predicate is dropped. The
+     old query excluded samples whose start time predates the last sync, i.e. everything the watch
+     delivers late (most of a workout's HR series). Anchor-only now.
+   - Deferred: `HKObjectQueryNoLimit` still materialises the whole backlog after prolonged POST
+     failures (page it).
    New types start **forward-only** from `lastSyncDate` — see step 4. HealthKit prompts for the
    new read types the next time the app calls `requestAuthorization` (one-time grant).
    Observers unchanged (HR/steps/energy/stand/workouts) — every wake syncs all 44 types anyway.

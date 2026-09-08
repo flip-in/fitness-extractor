@@ -298,10 +298,17 @@ class HealthKitService {
     // MARK: - Health Metrics
 
     /// Anchored fetch of one quantity type from the sync table. Scalar samples
-    /// only, so cheap enough to run for every type inside a background wake.
+    /// only, so cheap in memory; latency is 1–7s per query in the background.
+    ///
+    /// `startDate` bounds only the *first* fetch (no anchor yet). Once an anchor
+    /// exists it alone defines "new": combining it with a start-date predicate
+    /// dropped samples the watch delivered late, i.e. with a start time before
+    /// the previous sync — most of a workout's heart-rate series arrives that way.
     func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, from startDate: Date, anchor: HKQueryAnchor? = nil) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
         return try await withCheckedThrowingContinuation { continuation in
-            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+            let predicate = anchor == nil
+                ? HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+                : nil
 
             let query = HKAnchoredObjectQuery(
                 type: entry.quantityType,

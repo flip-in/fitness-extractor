@@ -71,7 +71,7 @@ struct ContentView: View {
                 VStack(spacing: 15) {
                     Button(action: {
                         Task {
-                            await syncService.performFullSync()
+                            await syncService.performFullSync(budget: nil, allMetrics: true) // foreground: no wake limit
                         }
                     }) {
                         HStack {

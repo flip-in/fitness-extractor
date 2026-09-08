@@ -26,6 +26,17 @@ class SyncService: ObservableObject {
     // UserDefaults keys for storing anchors
     private let workoutsAnchorKey = "workoutsAnchor"
     private let lastSyncDateKey = "lastSyncDate"
+    /// Wall-clock safety net for a HealthKit observer wake. Measured on device
+    /// 2026-09-08: dasd grants a 30s activity window, then suspends the process
+    /// mid-query. Anchored queries take 1–7s each in the background. The tiering
+    /// in `HealthMetricTypes` is what keeps a wake short; this only stops a slow
+    /// one from being suspended mid-route.
+    static let wakeBudget: TimeInterval = 20
+
+    /// Metric types fetched at once. HealthKit's per-query latency dominates,
+    /// not sample volume, so a few in flight cuts wall time ~4x; kept small so
+    /// peak memory stays a handful of small sample arrays.
+    private static let metricConcurrency = 4
 
     /// Pre-table anchor keys (2025-10 → 2026-09). Read once as a fallback so the
     /// first run after upgrading doesn't re-fetch HR/steps from `lastSyncDate`.
@@ -44,7 +55,14 @@ class SyncService: ObservableObject {
 
     // MARK: - Public Sync Methods
 
-    func performFullSync() async {
+    /// `budget`: seconds before the metric pass stops and defers the rest to the
+    /// next wake. Observer wakes pass `wakeBudget`; the foreground button and the
+    /// nightly task pass nil (unbounded, the task has its own expiration flag).
+    ///
+    /// `allMetrics`: sync every metric type. Wakes pass false and get only the
+    /// hot tier, plus the workout tier when this wake synced a new workout —
+    /// see `HealthMetricTypes.Tier`.
+    func performFullSync(budget: TimeInterval? = SyncService.wakeBudget, allMetrics: Bool = false, shouldContinue: @escaping () -> Bool = { true }) async {
         guard !isSyncing else {
             if Config.debugLogging {
                 print("⏭️ Sync already in progress, skipping")
@@ -56,6 +74,11 @@ class SyncService: ObservableObject {
         syncError = nil
         syncStatus = "Syncing..."
 
+        let deadline = budget.map { Date(timeIntervalSinceNow: $0) }
+        let withinBudget: () -> Bool = {
+            shouldContinue() && (deadline.map { Date() < $0 } ?? true)
+        }
+
         do {
             // Test backend connection first
             let isHealthy = try await api.healthCheck()
@@ -66,16 +89,20 @@ class SyncService: ObservableObject {
             }
 
             // Sync workouts (metadata only; routes queue up for backfill)
-            try await syncWorkouts()
+            let newWorkouts = try await syncWorkouts()
 
             // Rings before metrics: they are the most visible thing on the
-            // dashboard and one cheap query. Metrics are 43 queries and any
-            // one of them can fail (e.g. a type not yet authorized) — that
-            // must not cost the rings update.
+            // dashboard and one cheap query; a metric failure or the budget
+            // running out must not cost the rings update.
             try await syncActivityRings()
 
-            // Sync health metrics
-            try await syncHealthMetrics()
+            // Health metrics: hot tier every wake; workout tier when a workout
+            // just landed (its HR recovery, running/cycling series are new);
+            // everything when asked (nightly task, foreground button).
+            var tiers: Set<HealthMetricTypes.Tier> = [.hot]
+            if newWorkouts > 0 { tiers.insert(.workout) }
+            if allMetrics { tiers = [.hot, .workout, .nightly] }
+            try await syncHealthMetrics(HealthMetricTypes.entries(in: tiers), shouldContinue: withinBudget)
 
             // Update last sync date
             let now = Date()
@@ -98,10 +125,23 @@ class SyncService: ObservableObject {
 
         // Routes last, after the cheap work has landed: a few per wake keeps each
         // wake inside its budget, and the nightly task sweeps whatever is left.
-        _ = await backfillRoutes(limit: RouteBackfillQueue.perSyncLimit)
-        RouteBackfillTask.scheduleIfNeeded()
+        // Only if time remains — a route is thousands of CLLocations and a
+        // suspended process mid-fetch just wastes the wake.
+        if withinBudget() {
+            _ = await backfillRoutes(limit: RouteBackfillQueue.perSyncLimit, shouldContinue: withinBudget)
+        }
+        NightlySyncTask.schedule()
 
         isSyncing = false
+    }
+
+    /// The nightly BGProcessingTask body: unbounded full sync (all 43 metric
+    /// types, minutes of runtime on charger) then as many routes as fit.
+    /// Returns the number of routes sent, for the task's success flag.
+    func performNightlySync(shouldContinue: @escaping () -> Bool) async -> Int {
+        await performFullSync(budget: nil, allMetrics: true, shouldContinue: shouldContinue)
+        guard shouldContinue() else { return 0 }
+        return await backfillRoutes(limit: RouteBackfillQueue.perProcessingTaskLimit, shouldContinue: shouldContinue)
     }
 
     /// Attaches GPS routes to workouts already synced without them, newest first.
@@ -210,7 +250,8 @@ class SyncService: ObservableObject {
 
     // MARK: - Private Sync Methods
 
-    private func syncWorkouts() async throws {
+    /// Returns the number of workouts sent this pass.
+    private func syncWorkouts() async throws -> Int {
         let anchor = loadAnchor(forKey: workoutsAnchorKey)
         let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
 
@@ -234,59 +275,88 @@ class SyncService: ObservableObject {
         if let newAnchor = newAnchor {
             saveAnchor(newAnchor, forKey: workoutsAnchorKey)
         }
+
+        return workouts.count
     }
 
-    /// One anchored fetch + POST per type in `HealthMetricTypes.all`. A type that
-    /// fails (HealthKit or network) is logged and skipped so one bad type can't
-    /// block the other ~40; its anchor is left untouched so it retries next wake.
+    /// One anchored fetch + POST per given type, a few at a time, stopping early
+    /// if `shouldContinue` says the budget is spent. Each type's anchor persists,
+    /// so a type skipped now is only delayed (to the next wake or the nightly).
+    ///
+    /// A type that fails (HealthKit or network) is logged and skipped so one bad
+    /// type can't block the rest; its anchor is left untouched so it retries.
     /// The first error is rethrown at the end so the sync still reports failure
     /// (rings and workouts have already landed by then — see `performFullSync`).
     ///
     /// A type with no anchor yet (newly added to the table) starts from
     /// `lastSyncDate`: forward-only. History for new types is ROADMAP step 4.
-    private func syncHealthMetrics() async throws {
+    private func syncHealthMetrics(_ entries: [HealthMetricTypes.Entry], shouldContinue: () -> Bool) async throws {
         let startDate = lastSyncDate ?? Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+
         var firstError: Error?
+        var attempted = 0
 
-        for entry in HealthMetricTypes.all {
-            let anchor = loadAnchor(forKey: entry.anchorKey)
-                ?? legacyAnchorKeys[entry.identifier].flatMap { loadAnchor(forKey: $0) }
+        for start in stride(from: 0, to: entries.count, by: Self.metricConcurrency) {
+            guard shouldContinue() else { break }
+            let chunk = entries[start..<min(start + Self.metricConcurrency, entries.count)]
 
-            do {
-                let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(entry, from: startDate, anchor: anchor)
-
-                if !metrics.isEmpty {
-                    let response = try await api.syncHealthMetrics(metrics)
-
-                    if Config.debugLogging {
-                        print("📊 \(entry.identifier.rawValue): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
-                    }
-
-                    // HTTP 207 = some rows failed; it isn't an error to the client,
-                    // so check explicitly. Keep the old anchor and let the failed
-                    // rows be re-fetched (the backend dedupes the rest by UUID).
-                    if let errors = response.errors, !errors.isEmpty {
-                        throw NSError(domain: "Sync", code: 207, userInfo: [
-                            NSLocalizedDescriptionKey: "\(errors.count) of \(metrics.count) rows rejected: \(errors.first?.error ?? "")"
-                        ])
+            await withTaskGroup(of: (String, Error?).self) { group in
+                for entry in chunk {
+                    group.addTask { @MainActor in
+                        do {
+                            try await self.syncMetricType(entry, from: startDate)
+                            return (entry.identifier.rawValue, nil)
+                        } catch {
+                            return (entry.identifier.rawValue, error)
+                        }
                     }
                 }
-
-                // Only after the backend has every row: a failure above leaves
-                // the old anchor so the samples are re-fetched next time.
-                if let newAnchor = newAnchor {
-                    saveAnchor(newAnchor, forKey: entry.anchorKey)
+                for await (name, error) in group {
+                    if let error = error {
+                        if Config.debugLogging { print("❌ \(name): \(error)") }
+                        if firstError == nil { firstError = error }
+                    }
                 }
-            } catch {
-                if Config.debugLogging {
-                    print("❌ \(entry.identifier.rawValue): \(error)")
-                }
-                if firstError == nil { firstError = error }
             }
+            attempted += chunk.count
+        }
+
+        if Config.debugLogging && attempted < entries.count {
+            print("⏱️ Metric pass out of budget at \(attempted)/\(entries.count) types; rest waits for the next wake or nightly")
         }
 
         if let firstError = firstError {
             throw firstError
+        }
+    }
+
+    private func syncMetricType(_ entry: HealthMetricTypes.Entry, from startDate: Date) async throws {
+        let anchor = loadAnchor(forKey: entry.anchorKey)
+            ?? legacyAnchorKeys[entry.identifier].flatMap { loadAnchor(forKey: $0) }
+
+        let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(entry, from: startDate, anchor: anchor)
+
+        if !metrics.isEmpty {
+            let response = try await api.syncHealthMetrics(metrics)
+
+            if Config.debugLogging {
+                print("📊 \(entry.identifier.rawValue): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+            }
+
+            // HTTP 207 = some rows failed; it isn't an error to the client,
+            // so check explicitly. Keep the old anchor and let the failed
+            // rows be re-fetched (the backend dedupes the rest by UUID).
+            if let errors = response.errors, !errors.isEmpty {
+                throw NSError(domain: "Sync", code: 207, userInfo: [
+                    NSLocalizedDescriptionKey: "\(errors.count) of \(metrics.count) rows rejected: \(errors.first?.error ?? "")"
+                ])
+            }
+        }
+
+        // Only after the backend has every row: a failure above leaves
+        // the old anchor so the samples are re-fetched next time.
+        if let newAnchor = newAnchor {
+            saveAnchor(newAnchor, forKey: entry.anchorKey)
         }
     }
 

@@ -3,9 +3,10 @@
 //  HealthKit Sync
 //
 //  Workouts are synced in two steps so the app never needs to be opened:
-//  1. Metadata only, inside the HealthKit observer wake (seconds of budget).
-//  2. GPS routes later, a few per wake plus a nightly BGProcessingTask, one
+//  1. Metadata only, inside the HealthKit observer wake (30s budget).
+//  2. GPS routes later, a few per wake plus the nightly BGProcessingTask, one
 //     workout at a time. The backend attaches a route to an existing workout.
+//  The same nightly task also runs the unbounded full metric sync.
 //
 
 import BackgroundTasks
@@ -58,16 +59,17 @@ final class RouteBackfillQueue {
     }
 }
 
-/// Nightly-on-charger drain of the route queue via BGTaskScheduler.
+/// Nightly-on-charger full sync via BGTaskScheduler: every metric type, then
+/// the route queue.
 ///
-/// Observer wakes are unpredictable and exactly what iOS throttles, so they can't
-/// be the only drain for an app that is never opened. A BGProcessingTask with
+/// Observer wakes are 30s windows and exactly what iOS throttles, so they can't
+/// be the only path for an app that is never opened. A BGProcessingTask with
 /// `requiresExternalPower` gets minutes of runtime, typically overnight.
 ///
 /// Requires, in Info.plist: `UIBackgroundModes` containing `processing`, and
 /// `BGTaskSchedulerPermittedIdentifiers` containing `identifier`.
-enum RouteBackfillTask {
-    static let identifier = "com.williamprice.HealthKit-Sync.route-backfill"
+enum NightlySyncTask {
+    static let identifier = "com.williamprice.HealthKit-Sync.nightly-sync"
 
     /// Must be called before `application(_:didFinishLaunchingWithOptions:)` returns.
     static func register() {
@@ -81,13 +83,8 @@ enum RouteBackfillTask {
     }
 
     /// Idempotent: resubmitting replaces the pending request. Safe to call after
-    /// every sync. Does nothing if the queue is empty.
-    static func scheduleIfNeeded() {
-        guard !RouteBackfillQueue.shared.isEmpty else {
-            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
-            return
-        }
-
+    /// every sync. Always scheduled — metrics need the sweep even with no routes.
+    static func schedule() {
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = true
@@ -96,12 +93,12 @@ enum RouteBackfillTask {
         do {
             try BGTaskScheduler.shared.submit(request)
             if Config.debugLogging {
-                print("🗓️ Route backfill task scheduled (\(RouteBackfillQueue.shared.count) pending)")
+                print("🗓️ Nightly sync task scheduled (\(RouteBackfillQueue.shared.count) routes pending)")
             }
         } catch {
             // BGTaskSchedulerErrorDomain code 1 = unavailable (simulator, Low Power,
-            // or Background App Refresh disabled). Not fatal: observer wakes still drain.
-            print("❌ Failed to schedule route backfill: \(error)")
+            // or Background App Refresh disabled). Not fatal: observer wakes still run.
+            print("❌ Failed to schedule nightly sync: \(error)")
         }
     }
 
@@ -112,15 +109,12 @@ enum RouteBackfillTask {
         task.expirationHandler = { expired.set() }
 
         Task { @MainActor in
-            let processed = await SyncService.shared.backfillRoutes(
-                limit: RouteBackfillQueue.perProcessingTaskLimit,
-                shouldContinue: { !expired.isSet }
-            )
+            let routes = await SyncService.shared.performNightlySync(shouldContinue: { !expired.isSet })
             if Config.debugLogging {
-                print("🌙 Route backfill task: \(processed) routes, \(RouteBackfillQueue.shared.count) still pending")
+                print("🌙 Nightly sync: \(routes) routes, \(RouteBackfillQueue.shared.count) still pending, expired: \(expired.isSet)")
             }
-            scheduleIfNeeded()
-            task.setTaskCompleted(success: processed > 0 || RouteBackfillQueue.shared.isEmpty)
+            schedule()
+            task.setTaskCompleted(success: !expired.isSet)
         }
     }
 }

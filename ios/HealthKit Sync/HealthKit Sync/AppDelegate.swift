@@ -13,8 +13,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         // BGTaskScheduler handlers must be registered before launch finishes.
-        RouteBackfillTask.register()
-        RouteBackfillTask.scheduleIfNeeded()
+        NightlySyncTask.register()
+        NightlySyncTask.schedule()
 
         // Set up background delivery observers
         setupBackgroundObservers()
@@ -94,7 +94,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
     @MainActor
     private func handleBackgroundDelivery(for dataType: String) async {
-        // Trigger a sync when background delivery fires
-        await SyncService.shared.performFullSync()
+        // Time-boxed: the wake is a 30s dasd window, after which the process is
+        // suspended wherever it is. Whatever doesn't fit resumes next wake or
+        // in the nightly task.
+        await SyncService.shared.performFullSync(budget: SyncService.wakeBudget)
     }
 }
