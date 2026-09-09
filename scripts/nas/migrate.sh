@@ -7,8 +7,8 @@
 # A file is pending when its NNN prefix has no row in schema_migrations. Files
 # run in order, each in one transaction (ON_ERROR_STOP), and the version row is
 # inserted afterwards if the file did not insert it itself (002_seed_user.sql
-# does not). Fresh volumes are still initialised by docker-entrypoint-initdb.d;
-# this covers every deploy after that. Called by receive-deploy.sh between
+# does not). A fresh volume has no schema_migrations table: everything is
+# pending and 001 creates the table. Called by receive-deploy.sh between
 # `compose up db` and `compose up app`, so a new image never runs on an old schema.
 set -euo pipefail
 

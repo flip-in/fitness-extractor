@@ -19,7 +19,9 @@ services:
       # SSD, local filesystem, chown 999:999 before first boot. Never NFS/SMB.
       - /volume2/docker/fitness-extractor/pgdata:/var/lib/postgresql/data
       # Runs only when pgdata is empty: schema + seed user.
-      - /volume2/docker/fitness-extractor/migrations:/docker-entrypoint-initdb.d:ro
+      # No docker-entrypoint-initdb.d mount: migrate.sh (receive-deploy.sh) applies
+      # 001… on a fresh volume too, one transaction per file, so a failure cannot
+      # leave a half-initialised pgdata that the entrypoint then treats as done.
     # Not published: only `app` talks to it.
     healthcheck:
       # -h localhost: the socket-only init server on a fresh volume must not count as healthy

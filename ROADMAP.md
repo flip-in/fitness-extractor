@@ -78,7 +78,9 @@ slow types (RestingHR, HRV, SpO2, RespiratoryRate, wrist temp, …) gain rows th
   (`pg_isready -h localhost`, also in both compose healthchecks) because on a fresh volume the
   socket-only init server answers while initdb.d is still applying 001–003; the wait is
   bounded (120s) so a dead DB fails the forced-command session instead of hanging it; the
-  bundle's `migrations/` replaces the NAS copy instead of overlaying it. Tested
+  bundle's `migrations/` replaces the NAS copy instead of overlaying it. Round 2 (1 finding,
+  fixed): the `docker-entrypoint-initdb.d` mount is gone from the NAS compose, so a fresh volume
+  is also migrated by the runner instead of by the entrypoint outside any transaction. Tested
   against the laptop DB: apply, a deliberately failing file (no version row left behind),
   no-op re-run, connection failure refused. First NAS run will insert the version-2 row for the
   already-seeded user; nothing else pending. Hand-applying SQL before a deploy is over.
