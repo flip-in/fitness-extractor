@@ -281,6 +281,12 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
      **Verified 00:10 CEST 09-09:** first wake on the new build re-sent 30 days of workouts,
      the Climbing (14:39–16:41Z) and the 16.6 km ride home (17:16–18:32Z) appeared, the ride's
      route attached in the same wake (fresh-route-first). Never opened the app.
+   - **Routes before metrics in unbounded runs** (user decision 2026-09-09): Sync Now and the
+     nightly task drain the whole route queue right after rings, before the all-tier metric
+     sweep. The sweep can run for an hour while the backfill lasts and the BGProcessingTask may
+     expire inside it; a route step at the end would have starved for nights. Observer wakes are
+     unchanged (fresh route → hot tier → ≤3 routes). The nightly log line now reports queue
+     entries cleared over the whole run, not just the trailing sweep.
    - **Fresh route first** (user decision 2026-09-08, "option 1"): the 12:09Z wake after the
      morning ride ran rings + hot tier and never reached the end-of-wake route step, so on an
      hourly cadence GPS only ever arrived via the nightly task. Now a queued workout that ended

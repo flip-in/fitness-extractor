@@ -155,6 +155,14 @@ class SyncService: ObservableObject {
                 _ = await attachRoute(fresh)
             }
 
+            // Unbounded runs (Sync Now, nightly) drain the whole route queue here,
+            // before the metric sweep: routes are few and finite, the metric backlog
+            // can run for an hour and the nightly task may expire inside it, so a
+            // route step at the end could starve for nights (user decision 2026-09-09).
+            if budget == nil {
+                await backfillRoutes(limit: RouteBackfillQueue.perProcessingTaskLimit, shouldContinue: withinBudget)
+            }
+
             // Health metrics: hot tier every wake; workout tier when a workout
             // just landed (its HR recovery, running/cycling series are new);
             // everything when asked (nightly task, foreground button).
@@ -201,10 +209,16 @@ class SyncService: ObservableObject {
     /// The nightly BGProcessingTask body: unbounded full sync (all 43 metric
     /// types, minutes of runtime on charger) then as many routes as fit.
     /// Returns the number of routes sent, for the task's success flag.
+    /// Returns how many queue entries were cleared (routes sent or dropped as
+    /// route-less). The queue drains inside `performFullSync` (routes-first);
+    /// the trailing sweep only catches entries the sync itself just queued.
     func performNightlySync(shouldContinue: @escaping () -> Bool) async -> Int {
+        let before = routeQueue.count
         await performFullSync(budget: nil, allMetrics: true, shouldContinue: shouldContinue)
-        guard shouldContinue() else { return 0 }
-        return await backfillRoutes(limit: RouteBackfillQueue.perProcessingTaskLimit, shouldContinue: shouldContinue)
+        if shouldContinue() {
+            await backfillRoutes(limit: RouteBackfillQueue.perProcessingTaskLimit, shouldContinue: shouldContinue)
+        }
+        return max(0, before - routeQueue.count)
     }
 
     /// Attaches GPS routes to workouts already synced without them, newest first.
