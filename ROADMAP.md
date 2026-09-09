@@ -24,11 +24,16 @@ background execution with HealthKit access**, ~hourly, 30s each, only while the 
 
 **Decision (user, "option 1"):** every tier and the history backfill ride on observer wakes.
 
-- Wake order now: workouts → rings → fresh route → hot (+workout) tier → ≤3 routes → **3
-  slow-tier types round-robin** (`slowTierCursor`, advanced before the fetch so a suspended wake
-  moves on) → **history backfill pages** while >6s of budget remain. Sync Now (unbounded) still
-  does all tiers, then backfill to completion.
-- `Tier.nightly` renamed `Tier.slow`. ~23 slow types → one rotation every ~8 wakes.
+- Wake order now: workouts → rings → fresh route → hot (+workout) tier → ≤3 routes → **3 types
+  of the workout+slow pool round-robin** (`slowTierCursor`, advanced before the fetch so a
+  suspended wake moves on) → **history backfill pages** while >6s of budget remain. Sync Now
+  (unbounded) still does all tiers, then backfill to completion.
+- `Tier.nightly` renamed `Tier.slow`. Pool of ~37 types → one rotation every ~12 wakes. The
+  workout tier is in the pool (pi review): VO2max / HR recovery / form samples land after the
+  wake that synced the workout and would otherwise wait for the next workout.
+- pi review also caught: backfill "done" must count deleted objects (the query limit includes
+  them), and a per-type failure (bad unit, HTTP 207) must not block the types after it — only a
+  locked store or a network error stops the pass.
 - **History backfill (step 4 below):** per type a second anchor `backfill.<id>` over the fixed
   predicate `start < 2026-09-09T00:00Z` (fixed predicate + anchor is safe; the earlier bug was a
   *moving* predicate), 5000 rows/page, anchor saved per page, `backfill.done.<id>` on a short

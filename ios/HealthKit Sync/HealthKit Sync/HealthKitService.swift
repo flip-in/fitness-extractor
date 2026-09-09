@@ -322,34 +322,46 @@ class HealthKitService {
         let predicate = anchor == nil
             ? HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
             : nil
-        return try await fetchHealthMetrics(entry, predicate: predicate, anchor: anchor, limit: limit)
+        let page = try await fetchHealthMetrics(entry, predicate: predicate, anchor: anchor, limit: limit)
+        return (page.metrics, page.newAnchor)
+    }
+
+    /// One page of an anchored query. `deletedCount` matters for paging: the
+    /// query's `limit` counts deleted objects too, so a page with fewer than
+    /// `limit` *samples* is only the last one if samples + deletions fall short.
+    struct MetricPage {
+        let metrics: [HealthMetricData]
+        let newAnchor: HKQueryAnchor?
+        let deletedCount: Int
+        var returnedCount: Int { metrics.count + deletedCount }
     }
 
     /// History backfill (ROADMAP step 4): anchored, paged fetch of every sample
     /// that *started before* `cutoff`, with its own anchor. The predicate is
     /// fixed, so combining it with the anchor is safe — the bug above was a
     /// predicate that moved with each sync. Runs in anchor (≈ insertion) order,
-    /// oldest first; a short page means the type's history is complete.
-    func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, before cutoff: Date, anchor: HKQueryAnchor?, limit: Int) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
+    /// oldest first; a page with `returnedCount < limit` ends the type's history.
+    func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, before cutoff: Date, anchor: HKQueryAnchor?, limit: Int) async throws -> MetricPage {
         let predicate = HKQuery.predicateForSamples(withStart: nil, end: cutoff, options: .strictStartDate)
         return try await fetchHealthMetrics(entry, predicate: predicate, anchor: anchor, limit: limit)
     }
 
-    private func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, predicate: NSPredicate?, anchor: HKQueryAnchor?, limit: Int) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
+    private func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, predicate: NSPredicate?, anchor: HKQueryAnchor?, limit: Int) async throws -> MetricPage {
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(
                 type: entry.quantityType,
                 predicate: predicate,
                 anchor: anchor,
                 limit: limit
-            ) { _, samples, _, newAnchor, error in
+            ) { _, samples, deleted, newAnchor, error in
                 if let error = error {
                     continuation.resume(throwing: error)
                     return
                 }
+                let deletedCount = deleted?.count ?? 0
 
                 guard let samples = samples as? [HKQuantitySample] else {
-                    continuation.resume(returning: ([], newAnchor))
+                    continuation.resume(returning: MetricPage(metrics: [], newAnchor: newAnchor, deletedCount: deletedCount))
                     return
                 }
 
@@ -367,7 +379,7 @@ class HealthKitService {
                     return
                 }
 
-                continuation.resume(returning: (metrics, newAnchor))
+                continuation.resume(returning: MetricPage(metrics: metrics, newAnchor: newAnchor, deletedCount: deletedCount))
             }
 
             healthStore.execute(query)

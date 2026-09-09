@@ -61,15 +61,18 @@ class SyncService: ObservableObject {
     /// unbounded runs (Sync Now, nightly) page to the end. Decision: user, 2026-09-08.
     private static let budgetedPageCap = 2
 
-    /// Slow-tier types synced per observer wake, round-robin (`slowCursorKey`),
-    /// after the hot tier and the route step. Observer wakes are the only
-    /// background execution that can read HealthKit (the store is locked with
-    /// the phone; the on-charger BGProcessingTask only runs while locked — see
-    /// `NightlySyncTask`), so the ~23 slow types have to trickle through wakes:
-    /// 3 per wake at 1–7s each is one concurrency chunk, ~8 wakes per rotation.
+    /// Non-hot types synced per observer wake, round-robin (`rotationCursorKey`)
+    /// over the workout + slow tiers, after the hot tier and the route step.
+    /// Observer wakes are the only background execution that can read HealthKit
+    /// (the store is locked with the phone; the on-charger BGProcessingTask only
+    /// runs while locked — see `NightlySyncTask`), so the ~37 non-hot types have
+    /// to trickle through wakes: 3 per wake at 1–7s each is one concurrency
+    /// chunk, ~12 wakes per rotation. The workout tier is in the rotation too
+    /// (pi review): VO2max, HR recovery and form samples land after the wake
+    /// that synced the workout, and would otherwise wait for the next workout.
     /// Decision: user, 2026-09-09 ("option 1").
-    static let slowTypesPerWake = 3
-    private let slowCursorKey = "slowTierCursor"
+    static let rotationTypesPerWake = 3
+    private let rotationCursorKey = "slowTierCursor"
 
     /// History backfill (ROADMAP step 4). Types that had a forward-only anchor
     /// before the anchor-only build hold rows from the 2026-09-08 cutover only.
@@ -235,7 +238,7 @@ class SyncService: ObservableObject {
             _ = await backfillRoutes(limit: RouteBackfillQueue.perSyncLimit, shouldContinue: withinBudget)
         }
         if !allMetrics {
-            await syncSlowTierRotation(shouldContinue: withinBudget)
+            await syncTierRotation(shouldContinue: withinBudget)
         }
         let canStartPage: () -> Bool = {
             withinBudget() && (deadline.map { $0.timeIntervalSinceNow > Self.backfillPageReserve } ?? true)
@@ -246,35 +249,37 @@ class SyncService: ObservableObject {
         isSyncing = false
     }
 
-    /// The next `slowTypesPerWake` slow-tier types, budgeted like the hot tier.
-    /// The cursor advances *before* the fetch so a wake suspended mid-way moves
-    /// on instead of retrying the same types forever; anchors make a skipped
-    /// type merely late.
-    private func syncSlowTierRotation(shouldContinue: @escaping () -> Bool) async {
-        let slow = HealthMetricTypes.entries(in: [.slow])
-        guard !slow.isEmpty, shouldContinue() else { return }
+    /// The next `rotationTypesPerWake` workout/slow-tier types, budgeted like
+    /// the hot tier. The cursor advances *before* the fetch so a wake suspended
+    /// mid-way moves on instead of retrying the same types forever; anchors make
+    /// a skipped type merely late.
+    private func syncTierRotation(shouldContinue: @escaping () -> Bool) async {
+        let pool = HealthMetricTypes.entries(in: [.workout, .slow])
+        guard !pool.isEmpty, shouldContinue() else { return }
 
-        let start = UserDefaults.standard.integer(forKey: slowCursorKey) % slow.count
-        let picked = (0..<min(Self.slowTypesPerWake, slow.count)).map { slow[(start + $0) % slow.count] }
-        UserDefaults.standard.set((start + picked.count) % slow.count, forKey: slowCursorKey)
+        let start = UserDefaults.standard.integer(forKey: rotationCursorKey) % pool.count
+        let picked = (0..<min(Self.rotationTypesPerWake, pool.count)).map { pool[(start + $0) % pool.count] }
+        UserDefaults.standard.set((start + picked.count) % pool.count, forKey: rotationCursorKey)
 
         do {
             try await syncHealthMetrics(picked, maxPages: Self.budgetedPageCap, shouldContinue: shouldContinue)
         } catch {
             if Config.debugLogging {
-                logSync("❌ Slow tier rotation: \(error)")
+                logSync("❌ Tier rotation: \(error)")
             }
         }
         if Config.debugLogging {
             let names = picked.map { $0.identifier.rawValue.replacingOccurrences(of: "HKQuantityTypeIdentifier", with: "") }
-            logSync("🔁 Slow tier \(start + 1)–\(start + picked.count)/\(slow.count): \(names.joined(separator: ", "))")
+            logSync("🔁 Rotation \(start + 1)–\(start + picked.count)/\(pool.count): \(names.joined(separator: ", "))")
         }
     }
 
     /// Pages pre-cutoff history, one type at a time in tier order (hot first:
     /// HR, steps, energy are what the dashboard shows), each page landing before
-    /// its anchor is saved. Stops at the first error: a locked store or a dead
-    /// network fails every type the same way, no point trying 40 more.
+    /// its anchor is saved. A locked store or a dead network fails every type
+    /// the same way, so those stop the pass; any other error (bad unit, HTTP
+    /// 207) is that type's problem and the pass moves on so one broken type
+    /// can't block the rest forever (pi review).
     private func backfillHistory(shouldContinue: @escaping () -> Bool) async {
         let ordered = HealthMetricTypes.entries(in: [.hot]) + HealthMetricTypes.entries(in: [.workout]) + HealthMetricTypes.entries(in: [.slow])
         var pages = 0
@@ -288,7 +293,8 @@ class SyncService: ObservableObject {
                 if Config.debugLogging {
                     logSync("❌ Backfill \(entry.identifier.rawValue): \(error)")
                 }
-                break
+                if Self.isGlobalFailure(error) { break }
+                continue
             }
         }
 
@@ -303,16 +309,18 @@ class SyncService: ObservableObject {
     private func backfillType(_ entry: HealthMetricTypes.Entry, pages: inout Int, shouldContinue: () -> Bool) async throws -> Bool {
         var anchor = loadAnchor(forKey: Self.backfillAnchorKey(entry))
         repeat {
-            let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(
+            let page = try await healthKit.fetchHealthMetrics(
                 entry, before: Self.backfillCutoff, anchor: anchor, limit: Self.metricPageSize
             )
             pages += 1
-            try await postMetrics(metrics, for: entry, page: pages, label: "backfill ")
-            if let newAnchor = newAnchor {
+            try await postMetrics(page.metrics, for: entry, page: pages, label: "backfill ")
+            if let newAnchor = page.newAnchor {
                 saveAnchor(newAnchor, forKey: Self.backfillAnchorKey(entry))
             }
-            anchor = newAnchor
-            if metrics.count < Self.metricPageSize || newAnchor == nil {
+            anchor = page.newAnchor
+            // Samples + deletions short of the limit = last page. Samples alone
+            // would call a full page of mostly deletions "done" (pi review).
+            if page.returnedCount < Self.metricPageSize || page.newAnchor == nil {
                 UserDefaults.standard.set(true, forKey: Self.backfillDoneKey(entry))
                 if Config.debugLogging {
                     logSync("📜 Backfill complete: \(entry.identifier.rawValue)")
@@ -320,6 +328,15 @@ class SyncService: ObservableObject {
                 return true
             }
         } while shouldContinue()
+        return false
+    }
+
+    /// Errors that mean "nothing HealthKit-related will work right now": the
+    /// store locked with the phone, or no network. Everything else is per type.
+    private static func isGlobalFailure(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if case APIError.networkError = error { return true }
+        if let hk = error as? HKError, hk.code == .errorDatabaseInaccessible { return true }
         return false
     }
 

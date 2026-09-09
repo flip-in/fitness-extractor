@@ -25,11 +25,12 @@ enum HealthMetricTypes {
     enum Tier {
         /// Every wake: changes through the day and shows on the dashboard.
         case hot
-        /// Only on a wake that just synced a new workout: per-workout series
-        /// and post-exercise measurements. Otherwise like `slow`.
+        /// On a wake that just synced a new workout: per-workout series and
+        /// post-exercise measurements. Otherwise in the rotation like `slow`.
         case workout
-        /// Daily/slow-changing measurements: `SyncService.slowTypesPerWake` of
-        /// them per wake, round-robin, after the hot tier and the route step.
+        /// Daily/slow-changing measurements: `SyncService.rotationTypesPerWake`
+        /// of the workout + slow pool per wake, round-robin, after the hot tier
+        /// and the route step.
         case slow
     }
 
