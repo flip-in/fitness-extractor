@@ -4,9 +4,10 @@
 //
 //  Workouts are synced in two steps so the app never needs to be opened:
 //  1. Metadata only, inside the HealthKit observer wake (30s budget).
-//  2. GPS routes later, a few per wake plus the nightly BGProcessingTask, one
-//     workout at a time. The backend attaches a route to an existing workout.
-//  The same nightly task also runs the unbounded full metric sync.
+//  2. GPS routes later, a few per wake, one workout at a time (a fresh one
+//     first). The backend attaches a route to an existing workout.
+//  The BGProcessingTask below was meant to sweep the rest overnight; it can't
+//  (see `NightlySyncTask`), so wakes are the only path and slowness is accepted.
 //
 
 import BackgroundTasks
@@ -95,12 +96,17 @@ final class RouteBackfillQueue {
     }
 }
 
-/// Nightly-on-charger full sync via BGTaskScheduler: every metric type, then
-/// the route queue.
+/// On-charger full sync via BGTaskScheduler: every metric type, backfill, then
+/// the route queue. **Effectively dead, kept as an opportunistic bonus.**
 ///
-/// Observer wakes are 30s windows and exactly what iOS throttles, so they can't
-/// be the only path for an app that is never opened. A BGProcessingTask with
-/// `requiresExternalPower` gets minutes of runtime, typically overnight.
+/// Measured 2026-09-09 from the phone's unified log: dasd launched this task 17
+/// times (every ~30 min, on charger, 00:40–10:57) and every run failed in 50 ms
+/// with HealthKit error 6 "Protected health data is inaccessible". The store is
+/// unreadable while the phone is locked, and dasd's Device Activity Policy only
+/// runs processing tasks while the phone is idle, i.e. locked. The two never
+/// overlap on a passcode-locked phone. Observer wakes (only fired while unlocked)
+/// are the sole background path with HealthKit access; `SyncService` fits every
+/// tier and the history backfill into them.
 ///
 /// Requires, in Info.plist: `UIBackgroundModes` containing `processing`, and
 /// `BGTaskSchedulerPermittedIdentifiers` containing `identifier`.
@@ -119,7 +125,8 @@ enum NightlySyncTask {
     }
 
     /// Idempotent: resubmitting replaces the pending request. Safe to call after
-    /// every sync. Always scheduled — metrics need the sweep even with no routes.
+    /// every sync. Always scheduled — cheap, and it does run if the phone is ever
+    /// idle *and* unlocked on a charger.
     static func schedule() {
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true

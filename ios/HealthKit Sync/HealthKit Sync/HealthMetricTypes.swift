@@ -17,15 +17,20 @@ import HealthKit
 enum HealthMetricTypes {
     /// When a type is fetched. A HealthKit observer wake is a 30s window and
     /// each query costs 1–7s in the background, so only a few types fit per
-    /// wake; the rest ride the nightly on-charger task (`NightlySyncTask`).
+    /// wake. Observer wakes are the *only* background execution that can read
+    /// HealthKit: the store is unreadable while the phone is locked, and the
+    /// on-charger BGProcessingTask only ever runs while it is locked (measured
+    /// 2026-09-09, 17/17 runs failed with HealthKit error 6). So every tier
+    /// has to fit into wakes, and "slow" means a few per wake in rotation.
     enum Tier {
         /// Every wake: changes through the day and shows on the dashboard.
         case hot
         /// Only on a wake that just synced a new workout: per-workout series
-        /// and post-exercise measurements. Nightly otherwise.
+        /// and post-exercise measurements. Otherwise like `slow`.
         case workout
-        /// Daily/slow-changing measurements: nightly only.
-        case nightly
+        /// Daily/slow-changing measurements: `SyncService.slowTypesPerWake` of
+        /// them per wake, round-robin, after the hot tier and the route step.
+        case slow
     }
 
     struct Entry {
@@ -55,36 +60,36 @@ enum HealthMetricTypes {
     static let all: [Entry] = [
         // Heart
         Entry(identifier: .heartRate, unit: bpm, tier: .hot),
-        Entry(identifier: .restingHeartRate, unit: bpm, tier: .nightly),
-        Entry(identifier: .walkingHeartRateAverage, unit: bpm, tier: .nightly),
-        Entry(identifier: .heartRateVariabilitySDNN, unit: ms, tier: .nightly),
+        Entry(identifier: .restingHeartRate, unit: bpm, tier: .slow),
+        Entry(identifier: .walkingHeartRateAverage, unit: bpm, tier: .slow),
+        Entry(identifier: .heartRateVariabilitySDNN, unit: ms, tier: .slow),
         Entry(identifier: .heartRateRecoveryOneMinute, unit: bpm, tier: .workout),
         Entry(identifier: .vo2Max, unit: vo2MaxUnit, tier: .workout),
 
         // Vitals
-        Entry(identifier: .oxygenSaturation, unit: .percent(), tier: .nightly),
-        Entry(identifier: .respiratoryRate, unit: bpm, tier: .nightly),
-        Entry(identifier: .appleSleepingWristTemperature, unit: .degreeCelsius(), tier: .nightly),
+        Entry(identifier: .oxygenSaturation, unit: .percent(), tier: .slow),
+        Entry(identifier: .respiratoryRate, unit: bpm, tier: .slow),
+        Entry(identifier: .appleSleepingWristTemperature, unit: .degreeCelsius(), tier: .slow),
 
         // Body
-        Entry(identifier: .bodyMass, unit: .gramUnit(with: .kilo), tier: .nightly),
-        Entry(identifier: .leanBodyMass, unit: .gramUnit(with: .kilo), tier: .nightly),
-        Entry(identifier: .bodyFatPercentage, unit: .percent(), tier: .nightly),
-        Entry(identifier: .bodyMassIndex, unit: .count(), tier: .nightly),
-        Entry(identifier: .height, unit: .meter(), tier: .nightly),
+        Entry(identifier: .bodyMass, unit: .gramUnit(with: .kilo), tier: .slow),
+        Entry(identifier: .leanBodyMass, unit: .gramUnit(with: .kilo), tier: .slow),
+        Entry(identifier: .bodyFatPercentage, unit: .percent(), tier: .slow),
+        Entry(identifier: .bodyMassIndex, unit: .count(), tier: .slow),
+        Entry(identifier: .height, unit: .meter(), tier: .slow),
 
         // Activity totals
         Entry(identifier: .stepCount, unit: .count(), tier: .hot),
-        Entry(identifier: .flightsClimbed, unit: .count(), tier: .nightly),
+        Entry(identifier: .flightsClimbed, unit: .count(), tier: .slow),
         Entry(identifier: .distanceWalkingRunning, unit: .meter(), tier: .hot),
         Entry(identifier: .distanceCycling, unit: .meter(), tier: .workout),
         Entry(identifier: .distanceSwimming, unit: .meter(), tier: .workout),
         Entry(identifier: .swimmingStrokeCount, unit: .count(), tier: .workout),
         Entry(identifier: .activeEnergyBurned, unit: .kilocalorie(), tier: .hot),
-        Entry(identifier: .basalEnergyBurned, unit: .kilocalorie(), tier: .nightly),
+        Entry(identifier: .basalEnergyBurned, unit: .kilocalorie(), tier: .slow),
         Entry(identifier: .appleExerciseTime, unit: .minute(), tier: .hot),
         Entry(identifier: .appleStandTime, unit: .minute(), tier: .hot),
-        Entry(identifier: .timeInDaylight, unit: .minute(), tier: .nightly),
+        Entry(identifier: .timeInDaylight, unit: .minute(), tier: .slow),
         Entry(identifier: .physicalEffort, unit: effortUnit, tier: .workout),
 
         // Running form
@@ -101,16 +106,16 @@ enum HealthMetricTypes {
         Entry(identifier: .cyclingFunctionalThresholdPower, unit: .watt(), tier: .workout),
 
         // Walking / mobility
-        Entry(identifier: .walkingSpeed, unit: metersPerSecond, tier: .nightly),
-        Entry(identifier: .walkingStepLength, unit: .meter(), tier: .nightly),
-        Entry(identifier: .walkingAsymmetryPercentage, unit: .percent(), tier: .nightly),
-        Entry(identifier: .walkingDoubleSupportPercentage, unit: .percent(), tier: .nightly),
-        Entry(identifier: .appleWalkingSteadiness, unit: .percent(), tier: .nightly),
-        Entry(identifier: .sixMinuteWalkTestDistance, unit: .meter(), tier: .nightly),
+        Entry(identifier: .walkingSpeed, unit: metersPerSecond, tier: .slow),
+        Entry(identifier: .walkingStepLength, unit: .meter(), tier: .slow),
+        Entry(identifier: .walkingAsymmetryPercentage, unit: .percent(), tier: .slow),
+        Entry(identifier: .walkingDoubleSupportPercentage, unit: .percent(), tier: .slow),
+        Entry(identifier: .appleWalkingSteadiness, unit: .percent(), tier: .slow),
+        Entry(identifier: .sixMinuteWalkTestDistance, unit: .meter(), tier: .slow),
 
         // Hearing
-        Entry(identifier: .environmentalAudioExposure, unit: .decibelAWeightedSoundPressureLevel(), tier: .nightly),
-        Entry(identifier: .headphoneAudioExposure, unit: .decibelAWeightedSoundPressureLevel(), tier: .nightly),
+        Entry(identifier: .environmentalAudioExposure, unit: .decibelAWeightedSoundPressureLevel(), tier: .slow),
+        Entry(identifier: .headphoneAudioExposure, unit: .decibelAWeightedSoundPressureLevel(), tier: .slow),
     ]
 
     static func entry(for identifier: HKQuantityTypeIdentifier) -> Entry? {

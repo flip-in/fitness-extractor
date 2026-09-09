@@ -4,7 +4,45 @@
 **Last active:** 2026-01-22
 **Resumed:** 2026-08-19
 **Current state:** Deployed on the NAS (ceres) 2026-09-08 with the full 1100-day history; phone
-points at it; background-only sync build installed. Remaining Phase 4 chores below, then heatmap.
+points at it; background-only sync build installed. 2026-09-09: the nightly task is dead by iOS
+design (HealthKit locked with the phone); all tiers + metric history backfill now ride on the
+hourly observer wakes. Remaining Phase 4 chores below, then sleep/workout extras, then heatmap.
+
+---
+
+## 2026-09-09 — the nightly task can never read HealthKit; everything rides on wakes
+
+**Found** (12h unified-log archive, morning of 09-09): the NAS had no POSTs 00:10→07:34 CEST
+and the slow-tier types had no rows for the day. dasd *did* launch
+`com.williamprice.HealthKit-Sync.nightly-sync` 17 times (every ~30 min, on charger, 00:40→10:57
+CEST). Every run failed in ~50 ms with HealthKit error 6 "Protected health data is
+inaccessible", then 50 route attempts failed the same way. HealthKit is unreadable while the
+phone is passcode-locked, and dasd's Device Activity Policy only runs processing tasks while
+the phone is idle (`deviceActive == 0`), i.e. locked. The two never overlap. Observer wakes
+also pause while locked (that's the overnight gap). So **HealthKit observer wakes are the only
+background execution with HealthKit access**, ~hourly, 30s each, only while the phone is unlocked.
+
+**Decision (user, "option 1"):** every tier and the history backfill ride on observer wakes.
+
+- Wake order now: workouts → rings → fresh route → hot (+workout) tier → ≤3 routes → **3
+  slow-tier types round-robin** (`slowTierCursor`, advanced before the fetch so a suspended wake
+  moves on) → **history backfill pages** while >6s of budget remain. Sync Now (unbounded) still
+  does all tiers, then backfill to completion.
+- `Tier.nightly` renamed `Tier.slow`. ~23 slow types → one rotation every ~8 wakes.
+- **History backfill (step 4 below):** per type a second anchor `backfill.<id>` over the fixed
+  predicate `start < 2026-09-09T00:00Z` (fixed predicate + anchor is safe; the earlier bug was a
+  *moving* predicate), 5000 rows/page, anchor saved per page, `backfill.done.<id>` on a short
+  page. Order hot → workout → slow. One-day overlap and the already-complete types page through
+  as server-side duplicates (0.1s/5000). Stops at the first error (lock/network fails every type).
+  Expect ~1–2M rows ≈ 200–400 pages at ~1–2 pages per wake: weeks, accepted ("slow is fine").
+- `isProtectedDataAvailable` guard in `performFullSync` and `performNightlySync`: one 🔒 log
+  line instead of 51 errors. The BGProcessingTask stays scheduled as an opportunistic bonus.
+- `pendingRoutes` in the UI is not observable without opening the app; the NAS
+  `workout_routes.created_at` and the wake POST sizes (0.2–2.5 MB = route re-POSTs) are the check.
+
+**Verify (09-09/10):** each wake's log shows `🔁 Slow tier a–b/23` and `📜 Backfill: N pages`;
+slow types (RestingHR, HRV, SpO2, RespiratoryRate, wrist temp, …) gain rows through the day;
+`min(start_date)` of HeartRate/StepCount/ActiveEnergy moves back over the days.
 
 ---
 
@@ -309,10 +347,10 @@ gets used (dashboard, heatmap, other apps) is decided in the backend/consumers l
 2. **Sleep** (`HKCategoryTypeSleepAnalysis`): new category-sample fetch; value = stage.
 3. **Workout extras**: `workoutActivities`, workout events (laps/pauses), `allStatistics`,
    effort score (iOS 18); route `course` + `verticalAccuracy`. Needs new tables.
-4. Historical backfill of **all** metric types (the NAS has metrics only from the 2026-09-08
-   cutover onward — the import covers workouts + rings only). Per-second series (running/cycling
-   form, HR during workouts) over 1100 days are millions of samples: do it per type, time-windowed,
-   probably via the queue + nightly BGProcessingTask pattern rather than one foreground fetch.
+4. [x] Historical backfill of **all** metric types — built 2026-09-09 (see the top section):
+   per-type `backfill.<id>` anchor over a fixed `start < 2026-09-09` predicate, paged 5000/page
+   in the tail of every observer wake (and to completion in Sync Now). Verify over the coming
+   days that `min(start_date)` per type walks back to the 2018–2022 first samples.
 
 Watch: HR-frequency series grow `health_metrics` fast (217k rows/yr for HR alone). Fine on the NAS.
 

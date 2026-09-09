@@ -8,6 +8,7 @@
 import Foundation
 import HealthKit
 import Combine
+import UIKit
 
 @MainActor
 class SyncService: ObservableObject {
@@ -59,6 +60,30 @@ class SyncService: ObservableObject {
     /// other hot types and the route step never ran. Two pages (~8s) leaves room;
     /// unbounded runs (Sync Now, nightly) page to the end. Decision: user, 2026-09-08.
     private static let budgetedPageCap = 2
+
+    /// Slow-tier types synced per observer wake, round-robin (`slowCursorKey`),
+    /// after the hot tier and the route step. Observer wakes are the only
+    /// background execution that can read HealthKit (the store is locked with
+    /// the phone; the on-charger BGProcessingTask only runs while locked — see
+    /// `NightlySyncTask`), so the ~23 slow types have to trickle through wakes:
+    /// 3 per wake at 1–7s each is one concurrency chunk, ~8 wakes per rotation.
+    /// Decision: user, 2026-09-09 ("option 1").
+    static let slowTypesPerWake = 3
+    private let slowCursorKey = "slowTierCursor"
+
+    /// History backfill (ROADMAP step 4). Types that had a forward-only anchor
+    /// before the anchor-only build hold rows from the 2026-09-08 cutover only.
+    /// Each type gets a second anchor (`backfillAnchorKey`) over a *fixed*
+    /// predicate `start < backfillCutoff`, paged like the live sync, and a done
+    /// flag once a short page comes back. The cutoff overlaps the live data by a
+    /// day; the backend skips duplicates by UUID (0.1s per 5000). Types that
+    /// already have full history page through as duplicates once.
+    /// Runs after everything else in a wake, and to completion in Sync Now.
+    private static let backfillCutoff = ISO8601DateFormatter().date(from: "2026-09-09T00:00:00Z")!
+
+    /// A backfill page is a 1–7s query plus a ~1.5s POST; don't start one with
+    /// less than this left in the wake or the suspension at +30s wastes it.
+    private static let backfillPageReserve: TimeInterval = 6
 
     /// Pre-table anchor keys (2025-10 → 2026-09). Read once as a fallback so the
     /// first run after upgrading doesn't re-fetch HR/steps from `lastSyncDate`.
@@ -118,6 +143,12 @@ class SyncService: ObservableObject {
             }
             return
         }
+        // HealthKit is unreadable while the phone is locked (error 6, "Protected
+        // health data is inaccessible"). Every query would fail; say so once.
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            logSync("🔒 Phone locked, HealthKit unreadable; skipping this run")
+            return
+        }
 
         isSyncing = true
         syncError = nil
@@ -165,10 +196,11 @@ class SyncService: ObservableObject {
 
             // Health metrics: hot tier every wake; workout tier when a workout
             // just landed (its HR recovery, running/cycling series are new);
-            // everything when asked (nightly task, foreground button).
+            // everything when asked (foreground button, nightly task). The slow
+            // tier's per-wake rotation runs after the route step, below.
             var tiers: Set<HealthMetricTypes.Tier> = [.hot]
             if newWorkouts > 0 { tiers.insert(.workout) }
-            if allMetrics { tiers = [.hot, .workout, .nightly] }
+            if allMetrics { tiers = [.hot, .workout, .slow] }
             try await syncHealthMetrics(
                 HealthMetricTypes.entries(in: tiers),
                 maxPages: budget == nil ? Int.max : Self.budgetedPageCap,
@@ -194,25 +226,117 @@ class SyncService: ObservableObject {
             }
         }
 
-        // Routes last, after the cheap work has landed: a few per wake keeps each
-        // wake inside its budget, and the nightly task sweeps whatever is left.
-        // Only if time remains — a route is thousands of CLLocations and a
-        // suspended process mid-fetch just wastes the wake.
+        // Best-effort tail, each step only if time remains — a suspended process
+        // mid-fetch just wastes the wake. Order: routes (finite, a few per wake;
+        // in unbounded runs this is the trailing sweep for entries the run just
+        // queued), then the slow tier's rotation, then history backfill pages
+        // until the budget is spent. Errors here are logged, never fatal.
         if withinBudget() {
             _ = await backfillRoutes(limit: RouteBackfillQueue.perSyncLimit, shouldContinue: withinBudget)
         }
+        if !allMetrics {
+            await syncSlowTierRotation(shouldContinue: withinBudget)
+        }
+        let canStartPage: () -> Bool = {
+            withinBudget() && (deadline.map { $0.timeIntervalSinceNow > Self.backfillPageReserve } ?? true)
+        }
+        await backfillHistory(shouldContinue: canStartPage)
         NightlySyncTask.schedule()
 
         isSyncing = false
     }
 
-    /// The nightly BGProcessingTask body: unbounded full sync (all 43 metric
-    /// types, minutes of runtime on charger) then as many routes as fit.
-    /// Returns the number of routes sent, for the task's success flag.
+    /// The next `slowTypesPerWake` slow-tier types, budgeted like the hot tier.
+    /// The cursor advances *before* the fetch so a wake suspended mid-way moves
+    /// on instead of retrying the same types forever; anchors make a skipped
+    /// type merely late.
+    private func syncSlowTierRotation(shouldContinue: @escaping () -> Bool) async {
+        let slow = HealthMetricTypes.entries(in: [.slow])
+        guard !slow.isEmpty, shouldContinue() else { return }
+
+        let start = UserDefaults.standard.integer(forKey: slowCursorKey) % slow.count
+        let picked = (0..<min(Self.slowTypesPerWake, slow.count)).map { slow[(start + $0) % slow.count] }
+        UserDefaults.standard.set((start + picked.count) % slow.count, forKey: slowCursorKey)
+
+        do {
+            try await syncHealthMetrics(picked, maxPages: Self.budgetedPageCap, shouldContinue: shouldContinue)
+        } catch {
+            if Config.debugLogging {
+                logSync("❌ Slow tier rotation: \(error)")
+            }
+        }
+        if Config.debugLogging {
+            let names = picked.map { $0.identifier.rawValue.replacingOccurrences(of: "HKQuantityTypeIdentifier", with: "") }
+            logSync("🔁 Slow tier \(start + 1)–\(start + picked.count)/\(slow.count): \(names.joined(separator: ", "))")
+        }
+    }
+
+    /// Pages pre-cutoff history, one type at a time in tier order (hot first:
+    /// HR, steps, energy are what the dashboard shows), each page landing before
+    /// its anchor is saved. Stops at the first error: a locked store or a dead
+    /// network fails every type the same way, no point trying 40 more.
+    private func backfillHistory(shouldContinue: @escaping () -> Bool) async {
+        let ordered = HealthMetricTypes.entries(in: [.hot]) + HealthMetricTypes.entries(in: [.workout]) + HealthMetricTypes.entries(in: [.slow])
+        var pages = 0
+
+        for entry in ordered where !UserDefaults.standard.bool(forKey: Self.backfillDoneKey(entry)) {
+            guard shouldContinue() else { break }
+            do {
+                let done = try await backfillType(entry, pages: &pages, shouldContinue: shouldContinue)
+                guard done else { break }   // budget ran out mid-type
+            } catch {
+                if Config.debugLogging {
+                    logSync("❌ Backfill \(entry.identifier.rawValue): \(error)")
+                }
+                break
+            }
+        }
+
+        if Config.debugLogging && pages > 0 {
+            let remaining = ordered.filter { !UserDefaults.standard.bool(forKey: Self.backfillDoneKey($0)) }.count
+            logSync("📜 Backfill: \(pages) pages this run, \(remaining)/\(ordered.count) types still to go")
+        }
+    }
+
+    /// Returns true when the type's history is complete (done flag set), false
+    /// when it stopped for budget with more to fetch.
+    private func backfillType(_ entry: HealthMetricTypes.Entry, pages: inout Int, shouldContinue: () -> Bool) async throws -> Bool {
+        var anchor = loadAnchor(forKey: Self.backfillAnchorKey(entry))
+        repeat {
+            let (metrics, newAnchor) = try await healthKit.fetchHealthMetrics(
+                entry, before: Self.backfillCutoff, anchor: anchor, limit: Self.metricPageSize
+            )
+            pages += 1
+            try await postMetrics(metrics, for: entry, page: pages, label: "backfill ")
+            if let newAnchor = newAnchor {
+                saveAnchor(newAnchor, forKey: Self.backfillAnchorKey(entry))
+            }
+            anchor = newAnchor
+            if metrics.count < Self.metricPageSize || newAnchor == nil {
+                UserDefaults.standard.set(true, forKey: Self.backfillDoneKey(entry))
+                if Config.debugLogging {
+                    logSync("📜 Backfill complete: \(entry.identifier.rawValue)")
+                }
+                return true
+            }
+        } while shouldContinue()
+        return false
+    }
+
+    private static func backfillAnchorKey(_ entry: HealthMetricTypes.Entry) -> String { "backfill.\(entry.identifier.rawValue)" }
+    private static func backfillDoneKey(_ entry: HealthMetricTypes.Entry) -> String { "backfill.done.\(entry.identifier.rawValue)" }
+
+    /// The BGProcessingTask body: unbounded full sync (all tiers, backfill to
+    /// completion) then as many routes as fit. In practice it never gets to run
+    /// with HealthKit readable — see `NightlySyncTask` — so this is opportunistic.
     /// Returns how many queue entries were cleared (routes sent or dropped as
     /// route-less). The queue drains inside `performFullSync` (routes-first);
     /// the trailing sweep only catches entries the sync itself just queued.
     func performNightlySync(shouldContinue: @escaping () -> Bool) async -> Int {
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            logSync("🔒 Nightly task ran with the phone locked; HealthKit unreadable, nothing to do")
+            return 0
+        }
         let before = routeQueue.count
         await performFullSync(budget: nil, allMetrics: true, shouldContinue: shouldContinue)
         if shouldContinue() {
@@ -452,12 +576,12 @@ class SyncService: ObservableObject {
         }
     }
 
-    private func postMetrics(_ metrics: [HealthMetricData], for entry: HealthMetricTypes.Entry, page: Int) async throws {
+    private func postMetrics(_ metrics: [HealthMetricData], for entry: HealthMetricTypes.Entry, page: Int, label: String = "") async throws {
         if !metrics.isEmpty {
             let response = try await api.syncHealthMetrics(metrics)
 
             if Config.debugLogging {
-                logSync("📊 \(entry.identifier.rawValue)\(page > 1 ? " p\(page)" : ""): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
+                logSync("📊 \(label)\(entry.identifier.rawValue)\(page > 1 ? " p\(page)" : ""): synced \(response.synced ?? 0), skipped \(response.skipped ?? 0)")
             }
 
             // HTTP 207 = some rows failed; it isn't an error to the client,

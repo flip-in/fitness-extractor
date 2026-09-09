@@ -319,11 +319,24 @@ class HealthKitService {
     /// back. Unbounded, a backlog after days of failed POSTs was materialised in
     /// one go (47k AppleExerciseTime rows on 2026-09-08).
     func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, from startDate: Date, anchor: HKQueryAnchor? = nil, limit: Int = HKObjectQueryNoLimit) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
-        return try await withCheckedThrowingContinuation { continuation in
-            let predicate = anchor == nil
-                ? HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
-                : nil
+        let predicate = anchor == nil
+            ? HKQuery.predicateForSamples(withStart: startDate, end: nil, options: .strictStartDate)
+            : nil
+        return try await fetchHealthMetrics(entry, predicate: predicate, anchor: anchor, limit: limit)
+    }
 
+    /// History backfill (ROADMAP step 4): anchored, paged fetch of every sample
+    /// that *started before* `cutoff`, with its own anchor. The predicate is
+    /// fixed, so combining it with the anchor is safe — the bug above was a
+    /// predicate that moved with each sync. Runs in anchor (≈ insertion) order,
+    /// oldest first; a short page means the type's history is complete.
+    func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, before cutoff: Date, anchor: HKQueryAnchor?, limit: Int) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
+        let predicate = HKQuery.predicateForSamples(withStart: nil, end: cutoff, options: .strictStartDate)
+        return try await fetchHealthMetrics(entry, predicate: predicate, anchor: anchor, limit: limit)
+    }
+
+    private func fetchHealthMetrics(_ entry: HealthMetricTypes.Entry, predicate: NSPredicate?, anchor: HKQueryAnchor?, limit: Int) async throws -> (metrics: [HealthMetricData], newAnchor: HKQueryAnchor?) {
+        return try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(
                 type: entry.quantityType,
                 predicate: predicate,
