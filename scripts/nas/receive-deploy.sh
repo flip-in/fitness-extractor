@@ -4,8 +4,10 @@
 #
 # The client's requested command arrives in $SSH_ORIGINAL_COMMAND and must be a
 # git short sha (the image tag). stdin is either a tar (image.tar.gz,
-# docker-compose.yml, receive-deploy.sh, backup.sh, migrations/) or empty for a
-# rollback to a tag already loaded. Prints "previous=<tag>" for the caller.
+# docker-compose.yml, receive-deploy.sh, backup.sh, migrate.sh, migrations/) or
+# empty for a rollback to a tag already loaded. Prints "previous=<tag>" for the
+# caller. Pending migrations are applied before the app starts (migrate.sh);
+# they are additive, so a rollback keeps the newer schema.
 #
 # Absolute paths: non-interactive DSM SSH does not have /usr/local/bin on PATH.
 set -euo pipefail
@@ -27,7 +29,7 @@ cd "$APP"
 if IFS= read -r -n1 -d '' first; then
   echo "receiving bundle" >&2
   { printf '%s' "$first"; cat; } | tar -xf - -C "$APP"
-  chmod +x "$APP/receive-deploy.sh" "$APP/backup.sh"
+  chmod +x "$APP/receive-deploy.sh" "$APP/backup.sh" "$APP/migrate.sh"
   echo "loading $IMAGE:$TAG" >&2
   gunzip -c "$APP/image.tar.gz" | "$DOCKER" load >&2
   rm -f "$APP/image.tar.gz"
@@ -46,6 +48,10 @@ else
   echo "TAG=$TAG" >> .env
 fi
 
+# Schema first, app second: the new image never runs against an old schema.
+# `up -d --wait` returns once the db healthcheck (pg_isready) passes.
+"$DOCKER" compose up -d --wait db >&2
+"$APP/migrate.sh" "$APP/migrations" "$DOCKER" compose exec -T db psql -U postgres -d fitness >&2
 "$DOCKER" compose up -d --remove-orphans >&2
 
 # Keep the newest $KEEP tags so rollback has something to go back to.

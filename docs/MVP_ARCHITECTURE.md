@@ -1,5 +1,9 @@
 # Fitness Extractor - MVP Architecture Plan
 
+> **Historical (Oct 2025 plan).** Kept for the reasoning behind the original choices; details
+> below have drifted. Current truth: `ROADMAP.md` (status, decisions, dated notes),
+> `docs/superpowers/specs/2026-09-08-nas-deployment-design.md` (deployment), and the code.
+
 ## Project Overview
 
 Personal fitness data extraction system that syncs HealthKit data from iOS to a self-hosted backend, with a web dashboard for visualization.

@@ -89,7 +89,7 @@ trap 'rm -rf "$STAGE"' EXIT
 echo "Saving image"
 docker save "$IMAGE:$TAG" | gzip -1 > "$STAGE/image.tar.gz"
 cp docker-compose.nas.yml "$STAGE/docker-compose.yml"
-cp scripts/nas/receive-deploy.sh scripts/nas/backup.sh "$STAGE/"
+cp scripts/nas/receive-deploy.sh scripts/nas/backup.sh scripts/nas/migrate.sh "$STAGE/"
 mkdir -p "$STAGE/migrations"
 cp backend/migrations/*.sql "$STAGE/migrations/"
 du -sh "$STAGE/image.tar.gz" | awk '{print "Image", $1}'

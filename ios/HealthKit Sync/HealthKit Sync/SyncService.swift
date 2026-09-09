@@ -43,7 +43,7 @@ class SyncService: ObservableObject {
     /// mid-query. Anchored queries take 1–7s each in the background. The tiering
     /// in `HealthMetricTypes` is what keeps a wake short; this only stops a slow
     /// one from being suspended mid-route.
-    static let wakeBudget: TimeInterval = 20
+    nonisolated static let wakeBudget: TimeInterval = 20
 
     /// Metric types fetched at once. HealthKit's per-query latency dominates,
     /// not sample volume, so a few in flight cuts wall time ~4x; kept small so

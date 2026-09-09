@@ -1,5 +1,9 @@
 # API Specification - Fitness Extractor
 
+> **Historical (Oct 2025 design).** The implemented API is `backend/src/routes/*.ts` and
+> `backend/src/controllers/*.ts` (e.g. favorites and the metadata-only workout POST are not
+> described here). The endpoint list in the root `README.md` is kept current; this is not.
+
 ## Overview
 
 RESTful API for syncing HealthKit data from iOS app and serving data to the web dashboard.

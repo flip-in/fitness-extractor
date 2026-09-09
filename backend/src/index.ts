@@ -42,11 +42,14 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
 
 // Request logging. Sits before the body parser so oversized payloads are still
 // logged with their size when express.json rejects them with a 413.
+// Successful health checks are skipped: the compose healthcheck polls
+// /api/health every 30s and would be most of the log. Failures still log.
 app.use((req: Request, res: Response, next: NextFunction) => {
 	const bytes = Number(req.headers["content-length"] ?? 0);
 	const size = bytes > 0 ? ` ${(bytes / 1024 / 1024).toFixed(2)}MB` : "";
 	const started = Date.now();
 	res.on("finish", () => {
+		if (req.path === "/api/health" && res.statusCode === 200) return;
 		console.log(
 			`${req.method} ${req.originalUrl} → ${res.statusCode}${size} ${Date.now() - started}ms`,
 		);

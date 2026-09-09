@@ -51,6 +51,11 @@ class APIClient {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 120 // ceiling; per-request value below governs
         config.timeoutIntervalForResource = 300
+        // Every request is an authenticated POST/GET of live data; nothing is
+        // cacheable. Without this, background wakes logged CFNetwork errors
+        // about the on-disk Cache.db it could not open.
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
         self.session = URLSession(configuration: config)
     }
 

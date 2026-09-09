@@ -26,8 +26,10 @@ export function getPool(): pg.Pool {
 			connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection cannot be established
 		});
 
-		// Test connection on startup
-		pool.on("connect", () => {
+		// Log the first connection only. Idle clients close after 30s and the
+		// Docker healthcheck hits /api/health every 30s, so every check opened a
+		// fresh client and this line drowned the request log.
+		pool.once("connect", () => {
 			console.log("Database connected");
 		});
 

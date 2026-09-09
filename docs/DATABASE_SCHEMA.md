@@ -1,5 +1,9 @@
 # Database Schema - Fitness Extractor
 
+> **Historical (Oct 2025 design).** The applied schema is `backend/migrations/*.sql`
+> (001 initial, 002 user seed, 003 `workout_annotations`); this document was not updated
+> with later migrations and differs in places. Read the SQL for anything that matters.
+
 ## Overview
 
 PostgreSQL database schema optimized for storing time-series fitness data from HealthKit.

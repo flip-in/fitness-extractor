@@ -32,7 +32,9 @@ The following technology choices have been made:
 - **Web Dashboard**: React with Vite, Mapbox for GPS visualization
 - **Deployment**: Docker Compose on Synology NAS, accessed via Tailscale
 
-See `docs/MVP_ARCHITECTURE.md` for complete architecture plan.
+`ROADMAP.md` is the current record (status, decisions, dated notes). The `docs/` trio
+(`MVP_ARCHITECTURE`, `DATABASE_SCHEMA`, `API_SPECIFICATION`) is the Oct 2025 plan, kept for
+history; the schema is `backend/migrations/*.sql` and the API is `backend/src/routes/*.ts`.
 
 ## Roadmap Management
 

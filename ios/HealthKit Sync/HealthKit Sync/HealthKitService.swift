@@ -180,7 +180,10 @@ class HealthKitService {
             endDate: Self.iso8601.string(from: workout.endDate),
             durationSeconds: Int(workout.duration),
             totalDistanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
-            totalEnergyBurnedKcal: workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()),
+            // iOS 18 deprecated `totalEnergyBurned`; the per-type statistics carry
+            // the same sum (active energy only, as before).
+            totalEnergyBurnedKcal: workout.statistics(for: HKQuantityType(.activeEnergyBurned))?
+                .sumQuantity()?.doubleValue(for: .kilocalorie()),
             avgHeartRateBpm: heartRateStats?.avg.map { Int($0) },
             maxHeartRateBpm: heartRateStats?.max.map { Int($0) },
             sourceName: workout.sourceRevision.source.name,

@@ -53,6 +53,32 @@ background execution with HealthKit access**, ~hourly, 30s each, only while the 
 slow types (RestingHR, HRV, SpO2, RespiratoryRate, wrist temp, …) gain rows through the day;
 `min(start_date)` of HeartRate/StepCount/ActiveEnergy moves back over the days.
 
+**Verified 09-09 afternoon (NAS log + DB, app never opened):** wakes at 12:38, 13:40, 15:27 CEST
+(gaps 62 / 107 min). 13:40 and 15:27 each ran hot → route re-POSTs → 3 rotation types →
+6–7 backfill pages inside the budget; 65k HeartRate rows backfilled so far
+(2025-05-13 → 2025-09-02, anchor order ≈ insertion order, older years follow). Rings 144 kcal /
+8 stand hours at 15:27 matched the watch. Route queue: 3 → 2 duplicate re-POSTs per wake.
+
+### 09-09 chores (branch `worktree-chores-c`)
+
+- iOS: `totalEnergyBurned` → `statistics(for: activeEnergyBurned).sumQuantity()` (iOS 18
+  deprecation); `urlCache = nil` + `reloadIgnoringLocalCacheData` on the API session (CFNetwork
+  Cache.db noise in background wakes); the two Swift 6 isolation warnings (`ExpirationFlag`,
+  `wakeBudget`) → build has zero warnings. Not installed on the phone yet (install after merge).
+- Backend: successful `GET /api/health` no longer logged (compose healthcheck every 30s) and
+  `Database connected` logs once, not per pooled client — together they were most of the log.
+- **Migration runner** `scripts/nas/migrate.sh`: receive-deploy now does `compose up --wait db`
+  → apply every `NNN_*.sql` whose version has no `schema_migrations` row (in one transaction
+  each, version row inserted if the file didn't) → `compose up` app. Tested against the laptop
+  DB (applied the missing 002 row + a no-op 004, re-run was a no-op). First NAS run will insert
+  the version-2 row for the already-seeded user; nothing else pending. Hand-applying SQL before
+  a deploy is no longer needed.
+- Removed `dashboard/eslint.config.js` (Biome lints; eslint not installed) and the Vite
+  template `dashboard/README.md`. `docs/` trio marked historical (banner + pointers to the SQL,
+  routes and ROADMAP); root README / CLAUDE.md point at the code instead.
+- Still open from list C: `fetchWorkouts` unbounded (metadata only, low priority); wake budget
+  20s → ~24s needs a look at the tail of a wake in the phone log first.
+
 ---
 
 ## 2026-09-08 — background-only workout sync
@@ -83,7 +109,7 @@ the scalar-sample observers (heart rate, steps) worked.
 **Not done / to verify on device:** rebuild from Xcode; watch `pendingRoutes` in the UI drop
 without opening the app again; confirm `updated` counts on the backend. Force-quitting the app
 disables BGTaskScheduler until the next launch — leave it in the switcher.
-`totalEnergyBurned` iOS 18 deprecation and `urlCache = nil` noise fix still deferred.
+~~`totalEnergyBurned` iOS 18 deprecation and `urlCache = nil` noise fix still deferred.~~ Done 09-09.
 
 ---
 
@@ -109,8 +135,8 @@ To rebuild again from scratch:
 
 ```bash
 docker compose up -d db
-# no migration runner exists — apply the schema by hand:
-docker exec -i fitness-db psql -U postgres -d fitness < backend/migrations/001_initial_schema.sql
+# laptop dev DB: apply the schema by hand (the NAS gets scripts/nas/migrate.sh on deploy)
+scripts/nas/migrate.sh backend/migrations docker exec -i fitness-db psql -U postgres -d fitness
 pnpm install && ./scripts/dev-server.sh
 ```
 
@@ -195,9 +221,8 @@ blowing the background memory budget; addressed 2026-09-08 (see top). Verify on 
   `PUT /api/workout/:id/favorite {is_favorite}`. Stored in the new
   `workout_annotations` table (`003_workout_annotations.sql`), keyed on `healthkit_uuid` with
   **no FK** so a wipe + re-import keeps them; future tags/notes/immich photo links go there too.
-  Migration is additive but NOT auto-applied on the NAS (initdb only runs on a fresh volume):
-  `docker exec -i fitness-db psql -U postgres -d fitness < migrations/003_workout_annotations.sql`
-  before deploying.
+  Was hand-applied on the NAS 09-08; since 09-09 `receive-deploy.sh` runs `migrate.sh` for
+  pending migrations on every deploy.
 - [ ] **Dockerize dashboard** — the one outstanding item
 
 **Note:** `react-router-dom` is installed but unused. Either wire it up (needed for the heatmap

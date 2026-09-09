@@ -173,7 +173,8 @@ enum NightlySyncTask {
 }
 
 /// Thread-safe flag for the expiration handler, which fires on an arbitrary queue.
-private final class ExpirationFlag: @unchecked Sendable {
+// nonisolated: created and set on BGTaskScheduler's queue, read on the main actor.
+private nonisolated final class ExpirationFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
 

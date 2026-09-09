@@ -183,17 +183,19 @@ fitness-extractor/
 - `GET /api/health-metrics/:metricType`
 
 All require the `X-API-Key` header except `/api/health`.
-Full detail in `docs/API_SPECIFICATION.md`.
+Source of truth: `backend/src/routes/*.ts` (`docs/API_SPECIFICATION.md` is the Oct 2025 plan).
 
 ## Database Schema
 
-7 tables: `workouts`, `workout_routes` (GPS as JSONB + bounding box), `health_metrics`,
-`activity_rings`, `sync_anchors`, `users`, `schema_migrations`.
+8 tables: `workouts`, `workout_routes` (GPS as JSONB + bounding box), `health_metrics`,
+`activity_rings`, `workout_annotations` (favorites; keyed on `healthkit_uuid`, no FK),
+`sync_anchors`, `users`, `schema_migrations`.
 
 Duplicate handling is via `ON CONFLICT` — `healthkit_uuid` for workouts and metrics,
 `(user_id, date)` for rings, `(user_id, data_type)` for anchors.
 
-See `docs/DATABASE_SCHEMA.md`.
+Source of truth: `backend/migrations/*.sql`. `scripts/nas/migrate.sh` applies pending
+`NNN_*.sql` on every deploy (`docs/DATABASE_SCHEMA.md` is the Oct 2025 plan).
 
 ## Development
 
