@@ -180,10 +180,7 @@ class HealthKitService {
             endDate: Self.iso8601.string(from: workout.endDate),
             durationSeconds: Int(workout.duration),
             totalDistanceMeters: workout.totalDistance?.doubleValue(for: .meter()),
-            // iOS 18 deprecated `totalEnergyBurned`; the per-type statistics carry
-            // the same sum (active energy only, as before).
-            totalEnergyBurnedKcal: workout.statistics(for: HKQuantityType(.activeEnergyBurned))?
-                .sumQuantity()?.doubleValue(for: .kilocalorie()),
+            totalEnergyBurnedKcal: Self.energyBurnedKcal(of: workout),
             avgHeartRateBpm: heartRateStats?.avg.map { Int($0) },
             maxHeartRateBpm: heartRateStats?.max.map { Int($0) },
             sourceName: workout.sourceRevision.source.name,
@@ -192,6 +189,17 @@ class HealthKitService {
             metadata: workout.metadata?.mapValues { "\($0)" },
             route: route
         )
+    }
+
+    /// iOS 18 deprecated `HKWorkout.totalEnergyBurned` in favour of the per-type
+    /// statistics, which builder-made workouts (Apple Watch, WorkOutDoors) carry.
+    /// Workouts saved through the legacy initialiser (older iPhone apps such as
+    /// the climbing logger) have no statistics, only the total: fall back to it.
+    private static func energyBurnedKcal(of workout: HKWorkout) -> Double? {
+        if let sum = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity() {
+            return sum.doubleValue(for: .kilocalorie())
+        }
+        return (workout as LegacyWorkoutTotals).legacyTotalEnergyBurned?.doubleValue(for: .kilocalorie())
     }
 
     // MARK: - Heart Rate Statistics for Workout
@@ -483,6 +491,17 @@ class HealthKitService {
 }
 
 // MARK: - HKWorkoutActivityType Extension
+
+/// Reaches the deprecated `totalEnergyBurned` through a protocol requirement, which
+/// the compiler does not flag; calling it directly is a warning on every build.
+private protocol LegacyWorkoutTotals {
+    var legacyTotalEnergyBurned: HKQuantity? { get }
+}
+
+extension HKWorkout: LegacyWorkoutTotals {
+    @available(iOS, deprecated: 18.0)
+    var legacyTotalEnergyBurned: HKQuantity? { totalEnergyBurned }
+}
 
 extension HKWorkoutActivityType {
     var name: String {

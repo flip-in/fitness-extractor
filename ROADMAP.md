@@ -62,14 +62,17 @@ slow types (RestingHR, HRV, SpO2, RespiratoryRate, wrist temp, …) gain rows th
 ### 09-09 chores (branch `worktree-chores-c`)
 
 - iOS: `totalEnergyBurned` → `statistics(for: activeEnergyBurned).sumQuantity()` (iOS 18
-  deprecation); `urlCache = nil` + `reloadIgnoringLocalCacheData` on the API session (CFNetwork
+  deprecation), falling back to the legacy total via a protocol indirection because the NAS
+  has 97 workouts from iPhone apps (perfect10, JEFIT) that may predate the workout builder and
+  carry no statistics; `urlCache = nil` + `reloadIgnoringLocalCacheData` on the API session (CFNetwork
   Cache.db noise in background wakes); the two Swift 6 isolation warnings (`ExpirationFlag`,
   `wakeBudget`) → build has zero warnings. Not installed on the phone yet (install after merge).
 - Backend: successful `GET /api/health` no longer logged (compose healthcheck every 30s) and
   `Database connected` logs once, not per pooled client — together they were most of the log.
 - **Migration runner** `scripts/nas/migrate.sh`: receive-deploy now does `compose up --wait db`
   → apply every `NNN_*.sql` whose version has no `schema_migrations` row (in one transaction
-  each, version row inserted if the file didn't) → `compose up` app. Tested against the laptop
+  each, version row inserted if the file didn't) → pin `TAG` → `compose up` app; a failed
+  migration leaves the old app and its tag in place and fails the deploy. Tested against the laptop
   DB (applied the missing 002 row + a no-op 004, re-run was a no-op). First NAS run will insert
   the version-2 row for the already-seeded user; nothing else pending. Hand-applying SQL before
   a deploy is no longer needed.

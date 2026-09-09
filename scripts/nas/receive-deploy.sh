@@ -41,6 +41,13 @@ fi
 PREV=$(sed -n 's/^TAG=//p' .env 2>/dev/null || true)
 echo "previous=${PREV:-none}"
 
+# Schema first, app second: the new image never runs against an old schema.
+# `up -d --wait` returns once the db healthcheck (pg_isready) passes. A failed
+# migration exits here (set -e): the old app keeps running and .env still names
+# its tag, so deploy.sh reports the failure instead of smoke-testing the old app.
+"$DOCKER" compose up -d --wait db >&2
+"$APP/migrate.sh" "$APP/migrations" "$DOCKER" compose exec -T db psql -U postgres -d fitness >&2
+
 # Pin the tag compose will run.
 if grep -q '^TAG=' .env 2>/dev/null; then
   sed -i "s/^TAG=.*/TAG=$TAG/" .env
@@ -48,10 +55,6 @@ else
   echo "TAG=$TAG" >> .env
 fi
 
-# Schema first, app second: the new image never runs against an old schema.
-# `up -d --wait` returns once the db healthcheck (pg_isready) passes.
-"$DOCKER" compose up -d --wait db >&2
-"$APP/migrate.sh" "$APP/migrations" "$DOCKER" compose exec -T db psql -U postgres -d fitness >&2
 "$DOCKER" compose up -d --remove-orphans >&2
 
 # Keep the newest $KEEP tags so rollback has something to go back to.
