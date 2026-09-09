@@ -32,8 +32,12 @@ background execution with HealthKit access**, ~hourly, 30s each, only while the 
   workout tier is in the pool (pi review): VO2max / HR recovery / form samples land after the
   wake that synced the workout and would otherwise wait for the next workout.
 - pi review also caught: backfill "done" must count deleted objects (the query limit includes
-  them), and a per-type failure (bad unit, HTTP 207) must not block the types after it — only a
-  locked store or a network error stops the pass.
+  them); a per-type failure (bad unit, HTTP 207) must not block the types after it — only a
+  locked store or a network error stops the pass; an *empty first page* may be an ungranted
+  read type (HealthKit answers denial with nothing, and the app is never opened to accept the
+  prompt) so it is retried daily instead of flagged done; a failed route is demoted to the back
+  of the queue so a poison route can't head every wake (the loop's `break` also only left the
+  `switch` — now `break pass`).
 - **History backfill (step 4 below):** per type a second anchor `backfill.<id>` over the fixed
   predicate `start < 2026-09-09T00:00Z` (fixed predicate + anchor is safe; the earlier bug was a
   *moving* predicate), 5000 rows/page, anchor saved per page, `backfill.done.<id>` on a short

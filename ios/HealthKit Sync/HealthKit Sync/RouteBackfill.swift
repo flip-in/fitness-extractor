@@ -90,6 +90,16 @@ final class RouteBackfillQueue {
         persist()
     }
 
+    /// Moves a failed entry to the back of the line (`next` serves newest first)
+    /// so one route that keeps timing out doesn't head every wake's route step
+    /// while the rest of the queue — and the work after it — starves (pi review).
+    func demote(_ uuid: String) {
+        guard let index = uuids.firstIndex(of: uuid), index != 0 else { return }
+        uuids.remove(at: index)
+        uuids.insert(uuid, at: 0)
+        persist()
+    }
+
     private func persist() {
         UserDefaults.standard.set(uuids, forKey: key)
         UserDefaults.standard.set(endDates.mapValues { $0.timeIntervalSince1970 }, forKey: endDatesKey)

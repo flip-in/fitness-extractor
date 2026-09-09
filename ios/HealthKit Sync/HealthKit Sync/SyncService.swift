@@ -304,15 +304,33 @@ class SyncService: ObservableObject {
         }
     }
 
-    /// Returns true when the type's history is complete (done flag set), false
-    /// when it stopped for budget with more to fetch.
+    /// Returns true when the type is finished for this run (history complete, or
+    /// nothing readable yet — see below), false when it stopped for budget.
+    ///
+    /// An empty *first* page is ambiguous: no history, or read access not yet
+    /// granted (HealthKit answers a denied type with an empty result, and this
+    /// app is never opened, so newly added types stay ungranted for a while). So
+    /// `done` is only set once a type has delivered a sample; an empty first page
+    /// is noted in `backfillEmptyAtKey` and retried a day later (pi review).
     private func backfillType(_ entry: HealthMetricTypes.Entry, pages: inout Int, shouldContinue: () -> Bool) async throws -> Bool {
+        if let emptyAt = UserDefaults.standard.object(forKey: Self.backfillEmptyAtKey(entry)) as? Date,
+           Date().timeIntervalSince(emptyAt) < Self.backfillEmptyRetry {
+            return true
+        }
+
         var anchor = loadAnchor(forKey: Self.backfillAnchorKey(entry))
         repeat {
             let page = try await healthKit.fetchHealthMetrics(
                 entry, before: Self.backfillCutoff, anchor: anchor, limit: Self.metricPageSize
             )
             pages += 1
+            if anchor == nil && page.metrics.isEmpty {
+                UserDefaults.standard.set(Date(), forKey: Self.backfillEmptyAtKey(entry))
+                if Config.debugLogging {
+                    logSync("📜 Backfill: nothing readable for \(entry.identifier.rawValue) (no history or not authorized); retry in a day")
+                }
+                return true
+            }
             try await postMetrics(page.metrics, for: entry, page: pages, label: "backfill ")
             if let newAnchor = page.newAnchor {
                 saveAnchor(newAnchor, forKey: Self.backfillAnchorKey(entry))
@@ -330,6 +348,10 @@ class SyncService: ObservableObject {
         } while shouldContinue()
         return false
     }
+
+    /// How long an empty first page keeps a type out of the backfill pass.
+    private static let backfillEmptyRetry: TimeInterval = 24 * 60 * 60
+    private static func backfillEmptyAtKey(_ entry: HealthMetricTypes.Entry) -> String { "backfill.emptyAt.\(entry.identifier.rawValue)" }
 
     /// Errors that mean "nothing HealthKit-related will work right now": the
     /// store locked with the phone, or no network. Everything else is per type.
@@ -374,13 +396,17 @@ class SyncService: ObservableObject {
     func backfillRoutes(limit: Int, shouldContinue: () -> Bool = { true }) async -> Int {
         var sent = 0
 
-        for uuidString in routeQueue.next(limit) {
+        pass: for uuidString in routeQueue.next(limit) {
             guard shouldContinue() else { break }
 
             switch await attachRoute(uuidString) {
             case .sent: sent += 1
             case .dropped: continue
-            case .failed: break
+            case .failed:
+                // Back of the queue, then stop: a network error would fail the
+                // next ones the same way (a bare `break` here only left the switch).
+                routeQueue.demote(uuidString)
+                break pass
             }
         }
 
