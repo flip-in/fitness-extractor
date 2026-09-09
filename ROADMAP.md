@@ -77,7 +77,8 @@ slow types (RestingHR, HRV, SpO2, RespiratoryRate, wrist temp, …) gain rows th
   (a failing migration must not block rolling back from it); DB readiness probed over TCP
   (`pg_isready -h localhost`, also in both compose healthchecks) because on a fresh volume the
   socket-only init server answers while initdb.d is still applying 001–003; the wait is
-  bounded (120s) so a dead DB fails the forced-command session instead of hanging it. Tested
+  bounded (120s) so a dead DB fails the forced-command session instead of hanging it; the
+  bundle's `migrations/` replaces the NAS copy instead of overlaying it. Tested
   against the laptop DB: apply, a deliberately failing file (no version row left behind),
   no-op re-run, connection failure refused. First NAS run will insert the version-2 row for the
   already-seeded user; nothing else pending. Hand-applying SQL before a deploy is over.

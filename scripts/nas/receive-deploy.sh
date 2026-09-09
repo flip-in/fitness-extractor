@@ -30,6 +30,9 @@ BUNDLE=0
 if IFS= read -r -n1 -d '' first; then
   BUNDLE=1
   echo "receiving bundle" >&2
+  # The bundle's migrations/ replaces the old set, it does not overlay it: a
+  # file dropped or renamed on master must not linger here and keep failing.
+  rm -f "$APP"/migrations/*.sql
   { printf '%s' "$first"; cat; } | tar -xf - -C "$APP"
   chmod +x "$APP/receive-deploy.sh" "$APP/backup.sh" "$APP/migrate.sh"
   echo "loading $IMAGE:$TAG" >&2
