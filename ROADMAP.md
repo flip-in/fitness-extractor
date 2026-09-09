@@ -71,11 +71,16 @@ slow types (RestingHR, HRV, SpO2, RespiratoryRate, wrist temp, …) gain rows th
   `Database connected` logs once, not per pooled client — together they were most of the log.
 - **Migration runner** `scripts/nas/migrate.sh`: receive-deploy now does `compose up --wait db`
   → apply every `NNN_*.sql` whose version has no `schema_migrations` row (in one transaction
-  each, version row inserted if the file didn't) → pin `TAG` → `compose up` app; a failed
-  migration leaves the old app and its tag in place and fails the deploy. Tested against the laptop
-  DB (applied the missing 002 row + a no-op 004, re-run was a no-op). First NAS run will insert
-  the version-2 row for the already-seeded user; nothing else pending. Hand-applying SQL before
-  a deploy is no longer needed.
+  each, the version row inside that same transaction) → pin `TAG` → `compose up` app; a failed
+  migration leaves the old app and its tag in place and fails the deploy. pi review round 1
+  (4 findings, all fixed): version row + file in one transaction; rollbacks skip migrations
+  (a failing migration must not block rolling back from it); DB readiness probed over TCP
+  (`pg_isready -h localhost`, also in both compose healthchecks) because on a fresh volume the
+  socket-only init server answers while initdb.d is still applying 001–003; the wait is
+  bounded (120s) so a dead DB fails the forced-command session instead of hanging it. Tested
+  against the laptop DB: apply, a deliberately failing file (no version row left behind),
+  no-op re-run, connection failure refused. First NAS run will insert the version-2 row for the
+  already-seeded user; nothing else pending. Hand-applying SQL before a deploy is over.
 - Removed `dashboard/eslint.config.js` (Biome lints; eslint not installed) and the Vite
   template `dashboard/README.md`. `docs/` trio marked historical (banner + pointers to the SQL,
   routes and ROADMAP); root README / CLAUDE.md point at the code instead.

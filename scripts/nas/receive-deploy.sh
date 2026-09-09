@@ -26,7 +26,9 @@ fi
 cd "$APP"
 
 # Was anything streamed? Read the first byte; if none, this is a rollback.
+BUNDLE=0
 if IFS= read -r -n1 -d '' first; then
+  BUNDLE=1
   echo "receiving bundle" >&2
   { printf '%s' "$first"; cat; } | tar -xf - -C "$APP"
   chmod +x "$APP/receive-deploy.sh" "$APP/backup.sh" "$APP/migrate.sh"
@@ -42,11 +44,24 @@ PREV=$(sed -n 's/^TAG=//p' .env 2>/dev/null || true)
 echo "previous=${PREV:-none}"
 
 # Schema first, app second: the new image never runs against an old schema.
-# `up -d --wait` returns once the db healthcheck (pg_isready) passes. A failed
-# migration exits here (set -e): the old app keeps running and .env still names
-# its tag, so deploy.sh reports the failure instead of smoke-testing the old app.
-"$DOCKER" compose up -d --wait db >&2
-"$APP/migrate.sh" "$APP/migrations" "$DOCKER" compose exec -T db psql -U postgres -d fitness >&2
+# Only for a received bundle: a rollback must not be blocked by the failing
+# migration it is rolling back from (migrations are additive; the old image
+# runs fine on the newer schema). A failed migration exits here (set -e): the
+# old app keeps running and .env still names its tag, so deploy.sh reports the
+# failure instead of smoke-testing the old app.
+if [ "$BUNDLE" = 1 ]; then
+  "$DOCKER" compose up -d db >&2
+  # Over TCP on purpose: on a fresh volume the entrypoint's temporary init server
+  # (socket only) answers `pg_isready` while docker-entrypoint-initdb.d is still
+  # applying 001–003; the real server is the first to listen on TCP. Bounded, so
+  # a dead DB fails the deploy instead of hanging the forced-command session.
+  for i in $(seq 1 60); do
+    if "$DOCKER" compose exec -T db pg_isready -q -h localhost -U postgres >/dev/null 2>&1; then break; fi
+    if [ "$i" = 60 ]; then echo "refused: db not ready after 120s" >&2; exit 4; fi
+    sleep 2
+  done
+  "$APP/migrate.sh" "$APP/migrations" "$DOCKER" compose exec -T db psql -U postgres -d fitness >&2
+fi
 
 # Pin the tag compose will run.
 if grep -q '^TAG=' .env 2>/dev/null; then
