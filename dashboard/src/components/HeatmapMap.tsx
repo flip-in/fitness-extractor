@@ -17,10 +17,10 @@ interface HeatmapMapProps {
 /**
  * Cells arrive as vector tiles from the backend (one MVT layer per group),
  * so Mapbox owns fetching, caching, and the tile buffer at the edges. Tiles
- * exist up to zoom 13 and are overzoomed beyond.
+ * exist up to zoom 14 (the base grid, ~6 m cells) and are overzoomed beyond.
  */
 const HEAT_SOURCE = "heat";
-const TILE_MAX_ZOOM = 13;
+const TILE_MAX_ZOOM = 14;
 const layerId = (g: ActivityGroup) => `heat-${g}`;
 const apiOrigin = API_BASE_URL || window.location.origin;
 
@@ -29,22 +29,24 @@ function tileUrl(version: string): string {
 }
 
 /**
- * Cell radius in px. Tiles at zoom ≥ 9 carry the z13 cells (256px-tile
- * pixels), which are 2^(mapZoom + 1 - 13) px wide on Mapbox's 512px tiles:
- * 1.24 px at zoom 13, doubling per zoom. Below that every stored zoom sits
- * under the 1.1 px floor, so the curve is flat there.
+ * Cell radius in px. Tiles at zoom ≥ 10 carry the z14 cells (256px-tile
+ * pixels), which are 2^(mapZoom + 1 - 14) px wide on Mapbox's 512px tiles.
+ * Radius is 0.8× that (with a soft edge, adjacent cells merge into a stroke
+ * rather than a bead chain): 1.6 px at zoom 14, doubling per zoom. Below the
+ * 1.1 px floor (zoom < ~13.5) the curve is flat.
  */
 const RADIUS: mapboxgl.Expression = [
 	"interpolate",
 	["exponential", 2],
 	["zoom"],
-	12.8,
+	13.4,
 	1.1,
-	13,
-	0.62 * 2,
+	14,
+	0.8 * 2,
 	22,
-	0.62 * 2 ** 10,
+	0.8 * 2 ** 9,
 ];
+const BLUR = 0.35;
 
 // Roughly logarithmic stops: the home streets reach counts in the hundreds
 // (max 452 on 2026-09-10), a one-off holiday ride is 1.
@@ -137,7 +139,7 @@ export function HeatmapMap({
 							6,
 							0.95,
 						],
-						"circle-blur": 0.15,
+						"circle-blur": BLUR,
 					},
 				});
 			}

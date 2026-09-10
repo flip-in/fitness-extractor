@@ -160,7 +160,7 @@ check(
     ALLOW_EMPTY or counting or n_rast == n_routes,
     f"rasterized={n_rast} routes={n_routes}",
 )
-status, body = call("/api/heatmap/cells?z=7&bbox=-180,-85,180,85")
+status, body = call("/api/heatmap/cells?z=8&bbox=-180,-85,180,85")
 heat = body.get("data", {}) if isinstance(body, dict) else {}
 n_cells = sum(len(v) // 3 for v in heat.get("cells", {}).values())
 check(
@@ -168,7 +168,7 @@ check(
     status == 200
     and isinstance(heat.get("cells"), dict)
     and (ALLOW_EMPTY or counting or n_rast == 0 or n_cells > 0),
-    f"{n_cells} cells at z7",
+    f"{n_cells} cells at z8",
 )
 status, body = call("/api/heatmap/cells?z=12&bbox=0,0,1,1")
 check("heatmap unsupported zoom -> 400", status == 400, str(status))
@@ -182,7 +182,7 @@ check(
     else status in (200, 204),
     f"{status}, {'protobuf body' if body else 'empty body'}",
 )
-status, body = call("/api/heatmap/tiles/14/0/0.mvt")
+status, body = call("/api/heatmap/tiles/15/0/0.mvt")
 check("heatmap tile beyond max zoom -> 400", status == 400, str(status))
 status, body = call("/api/heatmap/workouts")
 heat_workouts = (body.get("data", {}) or {}).get("workouts") if isinstance(body, dict) else None

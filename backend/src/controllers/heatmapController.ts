@@ -13,8 +13,8 @@ import {
 const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 /**
- * GET /api/heatmap/cells?z=13&bbox=west,south,east,north[&types=Cycling,Running]
- * z must be one of the stored zooms (13, 10, 7).
+ * GET /api/heatmap/cells?z=14&bbox=west,south,east,north[&types=Cycling,Running]
+ * z must be one of the stored zooms (ZOOMS: 14, 11, 8).
  */
 export async function getHeatmapCells(
 	req: Request,

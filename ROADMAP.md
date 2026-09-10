@@ -75,6 +75,13 @@ cache, routes cut off at the edges), and between map zoom 10 and 13 the z10 roll
   hence the custom filter in `index.ts`.
 - **Stale-while-open:** a route counted after the page loaded stays invisible until reload
   (version is read once at map load). Acceptable for one user.
+- **Finer grid (user: "less rasterized when zoomed in"):** `BASE_ZOOM` 13 → 14 (~6 m cells at
+  52°N; GPS accuracy is 5–10 m, so finer would draw noise), `ZOOMS` 14/11/8, z14 tiles from tile
+  zoom 10. Circles 0.8× the cell footprint with blur 0.35 so neighbours merge into a stroke.
+  Startup now compares the stored zooms with `ZOOMS` and runs a full rebuild on mismatch (so a
+  `BASE_ZOOM` change deploys itself); otherwise the usual reconcile. Laptop: 944 routes →
+  203,868 z14 / 21,736 z11 / 1,935 z8 cells, table 39 MB (was 17), densest Amsterdam tile
+  (z10) 204 KB gzip. No schema change (zoom is a column).
 
 ---
 

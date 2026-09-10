@@ -185,8 +185,8 @@ fitness-extractor/
 ### Heatmap (grid counts, see `backend/src/services/heatmapService.ts`)
 
 - `GET  /api/heatmap/tiles/:z/:x/:y.mvt[?v=version]` (Mapbox Vector Tile, one layer per activity
-  group, z ≤ 13; what the `/map` page renders; cached a year, keyed on the `/status` version)
-- `GET  /api/heatmap/cells?z=13|10|7&bbox=w,s,e,n[&types=Cycling,Running]` (raw grid counts)
+  group, z ≤ 14; what the `/map` page renders; cached a year, keyed on the `/status` version)
+- `GET  /api/heatmap/cells?z=14|11|8&bbox=w,s,e,n[&types=Cycling,Running]` (raw grid counts)
 - `GET  /api/heatmap/workouts` (every workout with a route, for the `/map` sidebar)
 - `GET  /api/heatmap/status` (counts, `version`, rebuild/reconcile progress)
 - `POST /api/heatmap/rebuild` (recount everything from `workout_routes`; runs in the background)

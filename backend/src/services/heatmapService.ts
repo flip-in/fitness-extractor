@@ -8,15 +8,16 @@ import { type ActivityGroup, groupCaseSql, groupOf } from "./heatmapGroups.js";
  * Rasterising a route: project every point to integer Web Mercator tile-pixel
  * coordinates at BASE_ZOOM, walk each consecutive pair with Bresenham so every
  * cell the segment crosses is hit, dedupe within the activity, then +1 each
- * cell. Coarser zooms are the same set shifted right (2^(13-z) cells per side)
+ * cell. Coarser zooms are the same set shifted right (2^(14-z) cells per side)
  * and deduped again, so `count` at every zoom is "activities through this cell".
  */
 
-export const BASE_ZOOM = 13;
-export const ZOOMS = [13, 10, 7] as const;
+/** Base grid: 256px-tile pixels at zoom 14, ~6 m at 52°N (GPS accuracy is 5–10 m; finer draws noise). */
+export const BASE_ZOOM = 14;
+export const ZOOMS = [14, 11, 8] as const;
 const TILE = 256;
 /** A segment longer than this many base cells (~40 km) is a GPS glitch, not a ride. */
-const MAX_SEGMENT_CELLS = 2000;
+const MAX_SEGMENT_CELLS = 4000;
 /** Points less accurate than this (metres) are dropped before rasterising. */
 const MAX_HORIZONTAL_ACCURACY_M = 100;
 /** Routes with more points than this are recorded as rasterised but not counted (CPU guard). */
@@ -46,7 +47,7 @@ export function project(
 	return { x, y };
 }
 
-/** Cells at BASE_ZOOM as packed numbers (x * 2^22 + y; both < 2^21). */
+/** Cells at BASE_ZOOM as packed numbers (x * 2^22 + y; both < 256 * 2^14 = 2^22). */
 const PACK = 2 ** 22;
 const pack = (x: number, y: number) => x * PACK + y;
 const unpack = (key: number) => ({ x: Math.floor(key / PACK), y: key % PACK });
@@ -229,6 +230,25 @@ export function getRebuildState(): RebuildState {
 }
 
 /**
+ * Startup recount. Normally a reconcile (count what a crash or a fresh
+ * deployment left uncounted). If the stored grid was built with different
+ * zooms than ZOOMS (a BASE_ZOOM change), a full rebuild instead.
+ */
+export async function startupRecount(pool: Pool): Promise<void> {
+	const stored = await pool.query<{ zoom: number }>(
+		"SELECT DISTINCT zoom FROM heatmap_cells",
+	);
+	const wanted = new Set<number>(ZOOMS);
+	const mismatch = stored.rows.some((r) => !wanted.has(r.zoom));
+	if (mismatch) {
+		console.log(
+			`Heatmap: stored zooms ${stored.rows.map((r) => r.zoom).join(",")} != ${ZOOMS.join(",")}; rebuilding`,
+		);
+	}
+	startRebuild(pool, mismatch ? "rebuild" : "reconcile");
+}
+
+/**
  * Recount routes one at a time in the background; poll getRebuildState().
  * mode "rebuild" truncates first and recounts everything; "reconcile" counts
  * only routes without a heatmap_rasterized row (a crash between a sync's
@@ -369,14 +389,14 @@ const TILE_BUFFER_UNITS = 24;
 
 /**
  * Which stored zoom feeds a tile at zoom z. A tile bounds its own payload, so
- * the finest cells can go much further out than the old viewport fetch: z13
- * from tile zoom 9 (≤ 2^12 cells per side, ~45k cells in the densest tile),
- * the rollups only below that.
+ * the finest cells can go much further out than a viewport fetch could: z14
+ * from tile zoom 10 (≤ 2^12 cells per side; the densest Amsterdam tile was
+ * ~0.5 MB before gzip at that ratio), the rollups only below that.
  */
 export function storedZoomForTile(z: number): number {
-	if (z >= 9) return 13;
-	if (z >= 6) return 10;
-	return 7;
+	if (z >= 10) return 14;
+	if (z >= 7) return 11;
+	return 8;
 }
 
 /**
