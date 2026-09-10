@@ -47,6 +47,10 @@ lines, cheap page loads, one-off rasterisation instead of decoding 1.69M JSONB p
   null-prototype `cells` map, smoke test checks `/status` (`rasterized == routes` unless
   counting or `--allow-empty`) and requires cells when anything is counted. Declined: further
   CPU hardening of the rasteriser beyond the 100k-point cap (single user, API key).
+- **Deployed 97b64fa (2026-09-10):** first automated migration run (`migrate: applying
+  004_heatmap.sql`), smoke 22/22 while the startup reconcile was mid-way (506/948), reconcile
+  finished on its own: 948/948 routes, 97,256 cells at z13 / 10,069 at z10 / 805 at z7. No manual
+  rebuild needed.
 
 ---
 
