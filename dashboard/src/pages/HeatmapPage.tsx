@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { HeatmapMap } from "../components/HeatmapMap";
@@ -32,7 +32,11 @@ export function HeatmapPage() {
 		other: true,
 	});
 	const [selectedId, setSelectedId] = useState<string | null>(null);
+	// Mirrors selectedId so a slow route response for an older click is dropped.
+	const selectedIdRef = useRef<string | null>(null);
 	const [selectedRoute, setSelectedRoute] = useState<WorkoutRoute | null>(null);
+	// Browser position: null while pending, false when unavailable or refused.
+	const [geo, setGeo] = useState<[number, number] | null | false>(null);
 	const [truncated, setTruncated] = useState(false);
 	// The map mounts once we know where to start, so the first tiles are useful.
 	const [start, setStart] = useState<{
@@ -49,47 +53,65 @@ export function HeatmapPage() {
 			);
 	}, []);
 
-	// Pick a start position once the list has loaded (or failed: the map must
-	// still appear so the error is not the whole page).
+	// Ask for the browser position on mount, independent of the workouts request.
 	useEffect(() => {
-		if (start || (workouts === null && !error)) return;
-		const newest = workouts?.[0];
-		const fromRoutes: [number, number] | null = newest
-			? [
-					(newest.bounds.min_lon + newest.bounds.max_lon) / 2,
-					(newest.bounds.min_lat + newest.bounds.max_lat) / 2,
-				]
-			: null;
 		if (!navigator.geolocation) {
-			setStart({ center: fromRoutes ?? FALLBACK_CENTER, zoom: 11 });
+			setGeo(false);
 			return;
 		}
 		let settled = false;
-		const settle = (center: [number, number]) => {
+		const settle = (v: [number, number] | false) => {
 			if (settled) return;
 			settled = true;
-			setStart({ center, zoom: 11 });
+			setGeo(v);
 		};
 		navigator.geolocation.getCurrentPosition(
 			(pos) => settle([pos.coords.longitude, pos.coords.latitude]),
-			() => settle(fromRoutes ?? FALLBACK_CENTER),
+			() => settle(false),
 			{ timeout: 4000, maximumAge: 600_000 },
 		);
 		// Don't hold the map hostage to a slow permission prompt.
-		const t = setTimeout(() => settle(fromRoutes ?? FALLBACK_CENTER), 4500);
+		const t = setTimeout(() => settle(false), 4500);
 		return () => clearTimeout(t);
-	}, [start, workouts, error]);
+	}, []);
+
+	// Start where the browser is; otherwise at the newest route once the list
+	// has loaded (or failed: the map must still appear so the error is not the
+	// whole page); otherwise the fallback.
+	useEffect(() => {
+		if (start || geo === null) return;
+		if (geo) {
+			setStart({ center: geo, zoom: 11 });
+			return;
+		}
+		if (workouts === null && !error) return;
+		const newest = workouts?.[0];
+		setStart({
+			center: newest
+				? [
+						(newest.bounds.min_lon + newest.bounds.max_lon) / 2,
+						(newest.bounds.min_lat + newest.bounds.max_lat) / 2,
+					]
+				: FALLBACK_CENTER,
+			zoom: 11,
+		});
+	}, [start, geo, workouts, error]);
 
 	const selectWorkout = async (w: HeatmapWorkout) => {
 		if (w.id === selectedId) {
+			selectedIdRef.current = null;
 			setSelectedId(null);
 			setSelectedRoute(null);
 			return;
 		}
+		selectedIdRef.current = w.id;
 		setSelectedId(w.id);
+		setSelectedRoute(null);
 		try {
-			setSelectedRoute(await api.getWorkoutRoute(w.id));
+			const route = await api.getWorkoutRoute(w.id);
+			if (selectedIdRef.current === w.id) setSelectedRoute(route);
 		} catch (err) {
+			if (selectedIdRef.current !== w.id) return;
 			console.error("Failed to load route:", err);
 			setSelectedRoute(null);
 		}

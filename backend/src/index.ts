@@ -34,6 +34,7 @@ import healthMetricsRoutes from "./routes/healthMetrics.js";
 import heatmapRoutes from "./routes/heatmap.js";
 import syncRoutes from "./routes/sync.js";
 import workoutRoutes from "./routes/workout.js";
+import { startRebuild } from "./services/heatmapService.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -114,6 +115,9 @@ app.listen(PORT, () => {
 	console.log(
 		`CORS origin: ${process.env.CORS_ORIGIN || "http://localhost:5173"}`,
 	);
+	// Count any route the heatmap missed (crash between a sync's COMMIT and its
+	// rasterisation, or a fresh deployment). Runs in the background.
+	startRebuild(getPool(), "reconcile");
 });
 
 // Graceful shutdown

@@ -17,6 +17,10 @@ const TILE = 256;
 const MAX_SEGMENT_CELLS = 2000;
 /** Points less accurate than this (metres) are dropped before rasterising. */
 const MAX_HORIZONTAL_ACCURACY_M = 100;
+/** Routes with more points than this are recorded as rasterised but not counted (CPU guard). */
+const MAX_ROUTE_POINTS = 100_000;
+/** pg_advisory_xact_lock key shared by rasterisation and the rebuild's TRUNCATE. */
+const HEATMAP_LOCK_KEY = 0x48454154;
 const MAX_LAT = 85.05112878;
 
 export interface RoutePointInput {
@@ -151,7 +155,9 @@ async function upsertCells(
 /**
  * Count one workout's route into the heatmap. Idempotent: a workout already in
  * heatmap_rasterized is skipped, so the sync path can call this on every route
- * it stores. Returns the number of base cells added (0 when skipped).
+ * it stores. A route that yields no cells (or is over MAX_ROUTE_POINTS) is still
+ * recorded as rasterised, so `rasterized == routes` once everything is counted.
+ * Returns the number of base cells added (0 when skipped).
  */
 export async function rasterizeWorkout(
 	pool: Pool,
@@ -159,11 +165,20 @@ export async function rasterizeWorkout(
 	workoutType: string,
 	points: RoutePointInput[],
 ): Promise<number> {
-	const cells = rasterizeRoute(points);
-	if (cells.size === 0) return 0;
+	let cells: Set<number>;
+	if (points.length > MAX_ROUTE_POINTS) {
+		console.warn(
+			`Heatmap: skipping ${workoutId}, ${points.length} points > ${MAX_ROUTE_POINTS}`,
+		);
+		cells = new Set();
+	} else {
+		cells = rasterizeRoute(points);
+	}
 	const client = await pool.connect();
 	try {
 		await client.query("BEGIN");
+		// Shared with the rebuild's TRUNCATE so the two never interleave.
+		await client.query("SELECT pg_advisory_xact_lock($1)", [HEATMAP_LOCK_KEY]);
 		// The row lock serialises two concurrent rasterisations of one workout.
 		const seen = await client.query(
 			"SELECT 1 FROM heatmap_rasterized WHERE workout_id = $1 FOR UPDATE",
@@ -188,6 +203,8 @@ export async function rasterizeWorkout(
 
 export interface RebuildState {
 	running: boolean;
+	/** "rebuild" truncates and recounts everything; "reconcile" counts only uncounted routes. */
+	mode: "rebuild" | "reconcile" | null;
 	total: number;
 	done: number;
 	started_at: string | null;
@@ -197,6 +214,7 @@ export interface RebuildState {
 
 const rebuildState: RebuildState = {
 	running: false,
+	mode: null,
 	total: 0,
 	done: 0,
 	started_at: null,
@@ -209,13 +227,19 @@ export function getRebuildState(): RebuildState {
 }
 
 /**
- * Drop and recount everything from workout_routes, one route in memory at a
- * time. Returns false if a rebuild is already running. Runs to completion in
- * the background; poll getRebuildState().
+ * Recount routes one at a time in the background; poll getRebuildState().
+ * mode "rebuild" truncates first and recounts everything; "reconcile" counts
+ * only routes without a heatmap_rasterized row (a crash between a sync's
+ * COMMIT and its rasterisation, or a fresh deployment). Returns false if a
+ * run is already in progress.
  */
-export function startRebuild(pool: Pool): boolean {
+export function startRebuild(
+	pool: Pool,
+	mode: "rebuild" | "reconcile" = "rebuild",
+): boolean {
 	if (rebuildState.running) return false;
 	rebuildState.running = true;
+	rebuildState.mode = mode;
 	rebuildState.total = 0;
 	rebuildState.done = 0;
 	rebuildState.started_at = new Date().toISOString();
@@ -224,10 +248,27 @@ export function startRebuild(pool: Pool): boolean {
 
 	void (async () => {
 		try {
-			await pool.query("TRUNCATE heatmap_cells, heatmap_rasterized");
+			if (mode === "rebuild") {
+				const client = await pool.connect();
+				try {
+					await client.query("BEGIN");
+					await client.query("SELECT pg_advisory_xact_lock($1)", [
+						HEATMAP_LOCK_KEY,
+					]);
+					await client.query("TRUNCATE heatmap_cells, heatmap_rasterized");
+					await client.query("COMMIT");
+				} catch (error) {
+					await client.query("ROLLBACK");
+					throw error;
+				} finally {
+					client.release();
+				}
+			}
 			const ids = await pool.query<{ id: string; workout_type: string }>(
 				`SELECT w.id, w.workout_type
 				 FROM workouts w JOIN workout_routes r ON r.workout_id = w.id
+				 LEFT JOIN heatmap_rasterized h ON h.workout_id = w.id
+				 WHERE h.workout_id IS NULL
 				 ORDER BY w.start_date`,
 			);
 			rebuildState.total = ids.rows.length;
@@ -240,11 +281,11 @@ export function startRebuild(pool: Pool): boolean {
 				await rasterizeWorkout(pool, row.id, row.workout_type, points);
 				rebuildState.done += 1;
 			}
-			console.log(`Heatmap rebuilt: ${rebuildState.done} routes`);
+			console.log(`Heatmap ${mode}: ${rebuildState.done} routes counted`);
 		} catch (error) {
 			rebuildState.error =
 				error instanceof Error ? error.message : String(error);
-			console.error("Heatmap rebuild failed:", error);
+			console.error(`Heatmap ${mode} failed:`, error);
 		} finally {
 			rebuildState.running = false;
 			rebuildState.finished_at = new Date().toISOString();
@@ -303,7 +344,8 @@ export async function getCells(
 		params,
 	);
 	const truncated = result.rows.length > MAX_CELLS;
-	const cells: Record<string, number[]> = {};
+	// Null prototype: workout_type is user data and could be "__proto__".
+	const cells: Record<string, number[]> = Object.create(null);
 	for (const row of result.rows.slice(0, MAX_CELLS)) {
 		let flat = cells[row.workout_type];
 		if (!flat) {

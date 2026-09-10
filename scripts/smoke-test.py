@@ -140,14 +140,35 @@ status, body = call(
 )
 check("GET /api/health-metrics/:metricType", status == 200 and bool(body), str(status))
 
-# Heatmap: whole-world cells at the coarsest zoom, and the sidebar list. Cells may be
-# empty until POST /api/heatmap/rebuild has run once on this deployment.
+# Heatmap: whole-world cells at the coarsest zoom, the counting status, and the sidebar
+# list. The app counts uncounted routes at startup (reconcile), so right after a deploy
+# the status may still be running; otherwise every route must be counted and, when any
+# is, there must be cells.
+status, body = call("/api/heatmap/status")
+hstat = body.get("data", {}) if isinstance(body, dict) else {}
+rebuild = hstat.get("rebuild") or {}
+counting = bool(rebuild.get("running"))
+n_routes = hstat.get("routes", 0)
+n_rast = hstat.get("rasterized_workouts", 0)
+check(
+    "GET /api/heatmap/status",
+    status == 200 and isinstance(rebuild, dict),
+    f"{n_rast}/{n_routes} routes counted" + (" (counting)" if counting else ""),
+)
+check(
+    "heatmap counts every route",
+    ALLOW_EMPTY or counting or n_rast == n_routes,
+    f"rasterized={n_rast} routes={n_routes}",
+)
 status, body = call("/api/heatmap/cells?z=7&bbox=-180,-85,180,85")
 heat = body.get("data", {}) if isinstance(body, dict) else {}
+n_cells = sum(len(v) // 3 for v in heat.get("cells", {}).values())
 check(
     "GET /api/heatmap/cells",
-    status == 200 and isinstance(heat.get("cells"), dict),
-    f"{sum(len(v) // 3 for v in heat.get('cells', {}).values())} cells at z7",
+    status == 200
+    and isinstance(heat.get("cells"), dict)
+    and (ALLOW_EMPTY or counting or n_rast == 0 or n_cells > 0),
+    f"{n_cells} cells at z7",
 )
 status, body = call("/api/heatmap/cells?z=12&bbox=0,0,1,1")
 check("heatmap unsupported zoom -> 400", status == 400, str(status))

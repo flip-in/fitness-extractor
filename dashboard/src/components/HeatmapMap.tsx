@@ -27,6 +27,8 @@ const EMPTY: FeatureCollection<Point> = {
 	features: [],
 };
 const sourceId = (g: ActivityGroup) => `heat-${g}`;
+/** Packs a cell (x, y) into one number; x, y < 2^21 at the finest stored zoom. */
+const CELL_KEY = 2 ** 22;
 
 /**
  * Cell radius in px so a cell drawn at stored zoom Z covers its own footprint
@@ -172,30 +174,41 @@ export function HeatmapMap({
 						);
 					}
 				}
-				const perGroup: Record<ActivityGroup, Feature<Point>[]> = {
-					cycling: [],
-					running: [],
-					walking: [],
-					other: [],
+				// Sum counts per (group, cell): two raw types in one group (Walking
+				// and Hiking) may both have a row for the same cell.
+				const perGroup: Record<ActivityGroup, Map<number, number>> = {
+					cycling: new Map(),
+					running: new Map(),
+					walking: new Map(),
+					other: new Map(),
 				};
 				for (const [type, flat] of Object.entries(data.cells)) {
 					const bucket = perGroup[groupOf(type)];
 					for (let i = 0; i < flat.length; i += 3) {
-						bucket.push({
-							type: "Feature",
-							properties: { c: flat[i + 2] },
-							geometry: {
-								type: "Point",
-								coordinates: cellCenter(flat[i], flat[i + 1], z),
-							},
-						});
+						const key = flat[i] * CELL_KEY + flat[i + 1];
+						bucket.set(key, (bucket.get(key) ?? 0) + flat[i + 2]);
 					}
 				}
 				for (const g of GROUP_ORDER) {
+					const features: Feature<Point>[] = [];
+					for (const [key, c] of perGroup[g]) {
+						features.push({
+							type: "Feature",
+							properties: { c },
+							geometry: {
+								type: "Point",
+								coordinates: cellCenter(
+									Math.floor(key / CELL_KEY),
+									key % CELL_KEY,
+									z,
+								),
+							},
+						});
+					}
 					const src = m.getSource(sourceId(g)) as
 						| mapboxgl.GeoJSONSource
 						| undefined;
-					src?.setData({ type: "FeatureCollection", features: perGroup[g] });
+					src?.setData({ type: "FeatureCollection", features });
 				}
 				onTruncated?.(data.truncated);
 			} catch (err) {

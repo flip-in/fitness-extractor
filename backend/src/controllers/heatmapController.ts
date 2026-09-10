@@ -106,9 +106,18 @@ export async function getHeatmapStatus(
 
 /** POST /api/heatmap/rebuild — truncate and recount every route, in the background. */
 export function rebuildHeatmap(_req: Request, res: Response): void {
-	const started = startRebuild(getPool());
+	const started = startRebuild(getPool(), "rebuild");
 	res.status(started ? 202 : 409).json({
 		success: started,
 		message: started ? "Rebuild started" : "Rebuild already running",
+	});
+}
+
+/** POST /api/heatmap/reconcile — count only routes not yet in heatmap_rasterized. */
+export function reconcileHeatmap(_req: Request, res: Response): void {
+	const started = startRebuild(getPool(), "reconcile");
+	res.status(started ? 202 : 409).json({
+		success: started,
+		message: started ? "Reconcile started" : "Rebuild already running",
 	});
 }

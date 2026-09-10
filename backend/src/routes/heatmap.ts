@@ -4,6 +4,7 @@ import {
 	getHeatmapStatus,
 	getHeatmapWorkouts,
 	rebuildHeatmap,
+	reconcileHeatmap,
 } from "../controllers/heatmapController.js";
 import { requireApiKey } from "../middleware/auth.js";
 
@@ -15,5 +16,6 @@ router.get("/cells", getHeatmapCells);
 router.get("/workouts", getHeatmapWorkouts);
 router.get("/status", getHeatmapStatus);
 router.post("/rebuild", rebuildHeatmap);
+router.post("/reconcile", reconcileHeatmap);
 
 export default router;

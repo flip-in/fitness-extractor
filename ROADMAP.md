@@ -34,10 +34,19 @@ lines, cheap page loads, one-off rasterisation instead of decoding 1.69M JSONB p
   `moveend` for the viewport at the finest stored zoom ≤ ~1 px/cell, group toggles, sidebar of
   all routed workouts (newest first), click → white route line + fly-to. Start: browser
   geolocation (4 s cap) → newest route → Amsterdam.
-- **Deploy notes:** migration 004 applies via the runner; then run `POST /api/heatmap/rebuild`
-  once against the NAS (curl with the API key) — the sync hook only counts routes that arrive
-  from then on. Not done: server-rendered raster tiles (true Strava look), per-type layer within
-  a group, mobile layout.
+- **Deploy notes:** migration 004 applies via the runner; at startup the app reconciles (counts
+  every route without a `heatmap_rasterized` row), so a fresh deployment fills the heatmap on its
+  own (944 routes ≈ 13 s on the laptop). `POST /api/heatmap/rebuild` is the from-scratch repair;
+  `POST /api/heatmap/reconcile` the incremental one. Not done: server-rendered raster tiles (true
+  Strava look), per-type layer within a group, mobile layout.
+- **pi-review outcome (8 findings, no P0/P1):** fixed — post-commit rasterise gap (startup +
+  on-demand reconcile; routes with no cells or > 100k points still get their tracking row so
+  `rasterized == routes` is the invariant), grouped layers now sum counts per cell (Walking +
+  Hiking), stale route response guard on sidebar clicks, geolocation starts on mount instead
+  of after `/workouts`, `pg_advisory_xact_lock` shared by rasterise and rebuild's TRUNCATE,
+  null-prototype `cells` map, smoke test checks `/status` (`rasterized == routes` unless
+  counting or `--allow-empty`) and requires cells when anything is counted. Declined: further
+  CPU hardening of the rasteriser beyond the 100k-point cap (single user, API key).
 
 ---
 
