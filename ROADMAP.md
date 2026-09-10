@@ -52,6 +52,30 @@ lines, cheap page loads, one-off rasterisation instead of decoding 1.69M JSONB p
   finished on its own: 948/948 routes, 97,256 cells at z13 / 10,069 at z10 / 805 at z7. No manual
   rebuild needed.
 
+### 2026-09-10 (later) — cells as vector tiles (branch `worktree-heatmap-tiles`)
+
+**Problem (user):** every pan refetched the exact viewport bbox and replaced the whole layer (no
+cache, routes cut off at the edges), and between map zoom 10 and 13 the z10 rollup drew as beads.
+
+- **Backend:** `GET /api/heatmap/tiles/:z/:x/:y.mvt` builds a Mapbox Vector Tile from
+  `heatmap_cells` (`vt-pbf`): one layer per activity group, one point per cell, `c` = count summed
+  over the group's raw types. A tile bounds its own payload, so z13 cells serve tile zooms ≥ 9
+  (rollups only below; the old viewport fetch had to fall back at 11). Small buffer past the tile
+  edge so circles are not clipped. 204 for empty tiles; `Cache-Control: immutable` for a year with
+  the heatmap `version` (`rasterized count-max(rasterized_at)`, now in `/status`) in the URL, so
+  any recount changes the URL. `compression` middleware added (tiles and JSON lists gzip).
+  Grouping moved to `heatmapGroups.ts` (single source; `/heatmap/workouts` carries `group`).
+- **Dashboard:** `HeatmapMap` is a `vector` source with `tiles` + `transformRequest` adding the
+  API key header; Mapbox owns fetching, caching, prefetch and edge buffers. The viewport fetch
+  effect, cell→lon/lat maths, stored-zoom switching and the "too many cells" notice are gone.
+  Radius is one exponential curve (1.1 px floor below zoom 13, doubling per zoom above).
+- **Measured (laptop):** Amsterdam tiles z9 556 KB → 164 KB gzip / z13 184 KB → 50 KB gzip,
+  4–60 ms to build; `/heatmap/workouts` 281 KB → 56 KB; empty tile 204 in 1 ms. Smoke 23/23
+  (tile + bad-tile checks added). Note: `compression`'s default filter skips the MVT MIME type,
+  hence the custom filter in `index.ts`.
+- **Stale-while-open:** a route counted after the page loaded stays invisible until reload
+  (version is read once at map load). Acceptable for one user.
+
 ---
 
 ## 2026-09-09 — the nightly task can never read HealthKit; everything rides on wakes

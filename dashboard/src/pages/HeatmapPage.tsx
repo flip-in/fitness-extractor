@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { HeatmapMap } from "../components/HeatmapMap";
-import { type ActivityGroup, GROUP_ORDER, GROUPS, groupOf } from "../heatmap";
+import { type ActivityGroup, GROUP_ORDER, GROUPS } from "../heatmap";
 import type { HeatmapWorkout, WorkoutRoute } from "../types";
 
 // Amsterdam; used until geolocation or the newest route says otherwise.
@@ -37,7 +37,6 @@ export function HeatmapPage() {
 	const [selectedRoute, setSelectedRoute] = useState<WorkoutRoute | null>(null);
 	// Browser position: null while pending, false when unavailable or refused.
 	const [geo, setGeo] = useState<[number, number] | null | false>(null);
-	const [truncated, setTruncated] = useState(false);
 	// The map mounts once we know where to start, so the first tiles are useful.
 	const [start, setStart] = useState<{
 		center: [number, number];
@@ -120,11 +119,7 @@ export function HeatmapPage() {
 	const toggle = (g: ActivityGroup) =>
 		setVisible((v) => ({ ...v, [g]: !v[g] }));
 
-	const onTruncated = useCallback((t: boolean) => setTruncated(t), []);
-
-	const listed = (workouts ?? []).filter(
-		(w) => visible[groupOf(w.workout_type)],
-	);
+	const listed = (workouts ?? []).filter((w) => visible[w.group]);
 
 	return (
 		<div className="h-screen w-screen flex bg-gray-950 text-gray-100 overflow-hidden">
@@ -135,16 +130,10 @@ export function HeatmapPage() {
 						initialZoom={start.zoom}
 						visible={visible}
 						selectedRoute={selectedRoute}
-						onTruncated={onTruncated}
 					/>
 				) : (
 					<div className="flex-1 flex items-center justify-center text-gray-400">
 						Locating…
-					</div>
-				)}
-				{truncated && (
-					<div className="absolute bottom-3 left-3 text-xs bg-black/70 px-2 py-1 rounded">
-						Too many cells for this view; zoom in for full detail.
 					</div>
 				)}
 			</div>
@@ -186,7 +175,7 @@ export function HeatmapPage() {
 						<p className="p-4 text-gray-400 text-sm">Loading…</p>
 					)}
 					{listed.map((w) => {
-						const g = groupOf(w.workout_type);
+						const g = w.group;
 						const active = w.id === selectedId;
 						return (
 							<button

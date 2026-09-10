@@ -77,10 +77,14 @@ export interface WorkoutRoute {
 	};
 }
 
+/** Activity groups the backend maps raw workout types into (heatmapGroups.ts). */
+export type ActivityGroup = "cycling" | "running" | "walking" | "other";
+
 /** One workout with a GPS route, as listed in the heatmap sidebar. */
 export interface HeatmapWorkout {
 	id: string;
 	workout_type: string;
+	group: ActivityGroup;
 	start_date: string;
 	duration_seconds: number;
 	total_distance_meters: number | null;
@@ -93,11 +97,13 @@ export interface HeatmapWorkout {
 	};
 }
 
-/** Grid cells for one viewport: per workout type, flat [x, y, count, ...] triples. */
-export interface HeatmapCells {
-	zoom: number;
-	cells: Record<string, number[]>;
-	truncated: boolean;
+/** GET /api/heatmap/status; `version` keys the tile URLs so a recount busts the cache. */
+export interface HeatmapStatus {
+	cells_by_zoom: Record<string, number>;
+	rasterized_workouts: number;
+	routes: number;
+	version: string;
+	rebuild: { running: boolean; mode: "rebuild" | "reconcile" | null };
 }
 
 export interface HealthMetric {

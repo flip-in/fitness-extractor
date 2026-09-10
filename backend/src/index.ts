@@ -21,6 +21,7 @@ if (!process.env.DB_PASSWORD || !process.env.API_KEY) {
 	process.exit(1);
 }
 
+import compression from "compression";
 import cors from "cors";
 import express, {
 	type NextFunction,
@@ -41,6 +42,16 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
+// gzip responses over 1 KB. The default filter only knows registered
+// compressible MIME types; the heatmap's vector tiles are not one of them.
+app.use(
+	compression({
+		filter: (req, res) =>
+			String(res.getHeader("Content-Type") ?? "").includes(
+				"mapbox-vector-tile",
+			) || compression.filter(req, res),
+	}),
+);
 
 // Request logging. Sits before the body parser so oversized payloads are still
 // logged with their size when express.json rejects them with a 413.

@@ -2,7 +2,7 @@ import type {
 	ActivityRing,
 	DashboardResponse,
 	HealthMetric,
-	HeatmapCells,
+	HeatmapStatus,
 	HeatmapWorkout,
 	WorkoutDetail,
 	WorkoutRoute,
@@ -12,8 +12,9 @@ import type {
 // API configuration from environment variables.
 // Default is relative (same origin): in production the backend serves this
 // build itself. Local split-process dev sets VITE_API_URL via dev-server.sh.
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
-const API_KEY = import.meta.env.VITE_API_KEY;
+// Exported for the heatmap's Mapbox tile source, which fetches outside ApiClient.
+export const API_BASE_URL: string = import.meta.env.VITE_API_URL || "";
+export const API_KEY: string | undefined = import.meta.env.VITE_API_KEY;
 
 /// The route shape the backend actually returns, before it's reshaped into the
 /// WorkoutRoute the map component consumes.
@@ -143,18 +144,9 @@ class ApiClient {
 		};
 	}
 
-	// Heatmap endpoints
-	async getHeatmapCells(
-		zoom: number,
-		bbox: [number, number, number, number],
-		types?: string[],
-	): Promise<HeatmapCells> {
-		const params = new URLSearchParams({
-			z: String(zoom),
-			bbox: bbox.map((v) => v.toFixed(5)).join(","),
-		});
-		if (types && types.length > 0) params.set("types", types.join(","));
-		return this.request<HeatmapCells>(`/api/heatmap/cells?${params}`);
+	// Heatmap endpoints (cells themselves arrive as vector tiles, see HeatmapMap)
+	async getHeatmapStatus(): Promise<HeatmapStatus> {
+		return this.request<HeatmapStatus>("/api/heatmap/status");
 	}
 
 	async getHeatmapWorkouts(): Promise<HeatmapWorkout[]> {

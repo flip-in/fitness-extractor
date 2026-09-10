@@ -1,4 +1,6 @@
 import type { Pool, PoolClient } from "pg";
+import { fromGeojsonVt } from "vt-pbf";
+import { type ActivityGroup, groupCaseSql, groupOf } from "./heatmapGroups.js";
 
 /**
  * GPS heatmap as grid counts. See migrations/004_heatmap.sql for the model.
@@ -357,9 +359,101 @@ export async function getCells(
 	return { zoom, cells, truncated };
 }
 
+// MARK: - Vector tiles
+
+/** Tiles are served for zoom 0..TILE_MAX_ZOOM; Mapbox overzooms beyond that. */
+export const TILE_MAX_ZOOM = BASE_ZOOM;
+const TILE_EXTENT = 4096;
+/** Widest circle the dashboard draws at an integer zoom, in extent units (3 px of a 512 px tile). */
+const TILE_BUFFER_UNITS = 24;
+
+/**
+ * Which stored zoom feeds a tile at zoom z. A tile bounds its own payload, so
+ * the finest cells can go much further out than the old viewport fetch: z13
+ * from tile zoom 9 (≤ 2^12 cells per side, ~45k cells in the densest tile),
+ * the rollups only below that.
+ */
+export function storedZoomForTile(z: number): number {
+	if (z >= 9) return 13;
+	if (z >= 6) return 10;
+	return 7;
+}
+
+/**
+ * Mapbox Vector Tile (z, x, y): one layer per activity group, one point per
+ * cell at its centre, property `c` = activities through the cell summed over
+ * the group's raw types. Includes a small buffer past the tile edge so circles
+ * are not clipped. Returns null for an empty tile.
+ */
+export async function getTile(
+	pool: Pool,
+	z: number,
+	x: number,
+	y: number,
+): Promise<Buffer | null> {
+	const stored = storedZoomForTile(z);
+	const side = 256 * 2 ** (stored - z); // cells per tile side
+	const unit = TILE_EXTENT / side; // extent units per cell
+	const margin = Math.ceil(TILE_BUFFER_UNITS / unit) + 1;
+	const x0 = x * side;
+	const y0 = y * side;
+	const params: unknown[] = [
+		stored,
+		x0 - margin,
+		x0 + side - 1 + margin,
+		y0 - margin,
+		y0 + side - 1 + margin,
+	];
+	const groupSql = groupCaseSql(params);
+	const result = await pool.query<{
+		x: number;
+		y: number;
+		g: ActivityGroup;
+		c: number;
+	}>(
+		`SELECT x, y, ${groupSql} AS g, sum(count)::int AS c
+		 FROM heatmap_cells
+		 WHERE zoom = $1 AND x BETWEEN $2 AND $3 AND y BETWEEN $4 AND $5
+		 GROUP BY x, y, g`,
+		params,
+	);
+	if (result.rows.length === 0) return null;
+	type VtFeature = {
+		type: 1;
+		geometry: [number, number][];
+		tags: { c: number };
+	};
+	const layers: Record<string, { features: VtFeature[] }> = {};
+	for (const row of result.rows) {
+		let layer = layers[row.g];
+		if (!layer) {
+			layer = { features: [] };
+			layers[row.g] = layer;
+		}
+		layer.features.push({
+			type: 1,
+			geometry: [
+				[
+					Math.round((row.x - x0 + 0.5) * unit),
+					Math.round((row.y - y0 + 0.5) * unit),
+				],
+			],
+			tags: { c: row.c },
+		});
+	}
+	// vt-pbf's typings want geojson-vt tile objects; this is the same shape.
+	return Buffer.from(
+		fromGeojsonVt(layers as unknown as Parameters<typeof fromGeojsonVt>[0], {
+			extent: TILE_EXTENT,
+			version: 2,
+		}),
+	);
+}
+
 export interface HeatmapWorkout {
 	id: string;
 	workout_type: string;
+	group: ActivityGroup;
 	start_date: string;
 	duration_seconds: number;
 	total_distance_meters: number | null;
@@ -392,6 +486,7 @@ export async function listWorkoutsWithRoutes(
 	return result.rows.map((row) => ({
 		id: row.id,
 		workout_type: row.workout_type,
+		group: groupOf(row.workout_type),
 		start_date: row.start_date,
 		duration_seconds: row.duration_seconds,
 		total_distance_meters:
@@ -412,6 +507,8 @@ export interface HeatmapStatus {
 	cells_by_zoom: Record<string, number>;
 	rasterized_workouts: number;
 	routes: number;
+	/** Changes whenever a route is (re)counted; the dashboard keys tile URLs on it. */
+	version: string;
 	rebuild: RebuildState;
 }
 
@@ -419,16 +516,23 @@ export async function getStatus(pool: Pool): Promise<HeatmapStatus> {
 	const cells = await pool.query<{ zoom: number; n: string }>(
 		"SELECT zoom, count(*) AS n FROM heatmap_cells GROUP BY zoom ORDER BY zoom",
 	);
-	const counts = await pool.query<{ rasterized: string; routes: string }>(
+	const counts = await pool.query<{
+		rasterized: string;
+		latest: string | null;
+		routes: string;
+	}>(
 		`SELECT (SELECT count(*) FROM heatmap_rasterized) AS rasterized,
+		        (SELECT extract(epoch FROM max(rasterized_at))::bigint FROM heatmap_rasterized) AS latest,
 		        (SELECT count(*) FROM workout_routes) AS routes`,
 	);
 	const byZoom: Record<string, number> = {};
 	for (const row of cells.rows) byZoom[String(row.zoom)] = Number(row.n);
+	const { rasterized, latest, routes } = counts.rows[0];
 	return {
 		cells_by_zoom: byZoom,
-		rasterized_workouts: Number(counts.rows[0].rasterized),
-		routes: Number(counts.rows[0].routes),
+		rasterized_workouts: Number(rasterized),
+		routes: Number(routes),
+		version: `${rasterized}-${latest ?? 0}`,
 		rebuild: getRebuildState(),
 	};
 }

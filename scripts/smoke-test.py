@@ -172,6 +172,18 @@ check(
 )
 status, body = call("/api/heatmap/cells?z=12&bbox=0,0,1,1")
 check("heatmap unsupported zoom -> 400", status == 400, str(status))
+# The world tile: a vector tile whenever anything is counted, 204 when nothing is.
+status, body = call("/api/heatmap/tiles/0/0/0.mvt")
+check(
+    "GET /api/heatmap/tiles/0/0/0.mvt",
+    # call() hands back non-JSON bodies as a (truncated) string; empty for a 204.
+    (status == 200 and isinstance(body, str) and len(body) > 0)
+    if n_cells > 0
+    else status in (200, 204),
+    f"{status}, {'protobuf body' if body else 'empty body'}",
+)
+status, body = call("/api/heatmap/tiles/14/0/0.mvt")
+check("heatmap tile beyond max zoom -> 400", status == 400, str(status))
 status, body = call("/api/heatmap/workouts")
 heat_workouts = (body.get("data", {}) or {}).get("workouts") if isinstance(body, dict) else None
 check(

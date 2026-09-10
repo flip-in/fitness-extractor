@@ -1,15 +1,8 @@
-import type { Feature, FeatureCollection, LineString, Point } from "geojson";
+import type { Feature, LineString } from "geojson";
 import mapboxgl from "mapbox-gl";
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
-import {
-	type ActivityGroup,
-	cellCenter,
-	GROUP_ORDER,
-	GROUPS,
-	groupOf,
-	storedZoomFor,
-} from "../heatmap";
+import { API_BASE_URL, API_KEY, api } from "../api";
+import { type ActivityGroup, GROUP_ORDER, GROUPS } from "../heatmap";
 import type { WorkoutRoute } from "../types";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -19,31 +12,39 @@ interface HeatmapMapProps {
 	initialZoom: number;
 	visible: Record<ActivityGroup, boolean>;
 	selectedRoute: WorkoutRoute | null;
-	onTruncated?: (truncated: boolean) => void;
 }
-
-const EMPTY: FeatureCollection<Point> = {
-	type: "FeatureCollection",
-	features: [],
-};
-const sourceId = (g: ActivityGroup) => `heat-${g}`;
-/** Packs a cell (x, y) into one number; x, y < 2^21 at the finest stored zoom. */
-const CELL_KEY = 2 ** 22;
 
 /**
- * Cell radius in px so a cell drawn at stored zoom Z covers its own footprint
- * with a little overlap: a 256px-tile cell is 2^(mapZoom + 1 - Z) px wide.
- * Exponential base-2 interpolation between two stops is exactly that curve.
+ * Cells arrive as vector tiles from the backend (one MVT layer per group),
+ * so Mapbox owns fetching, caching, and the tile buffer at the edges. Tiles
+ * exist up to zoom 13 and are overzoomed beyond.
  */
-function radiusExpression(storedZoom: number): mapboxgl.Expression {
-	// ["zoom"] is only allowed as the direct input of a top-level interpolate,
-	// so the 1.1 px floor is baked into per-zoom stops instead of a "max".
-	const px = (mapZoom: number) =>
-		Math.max(1.1, 0.62 * 2 ** (mapZoom + 1 - storedZoom));
-	const stops: number[] = [];
-	for (let z = storedZoom - 4; z <= storedZoom + 8; z++) stops.push(z, px(z));
-	return ["interpolate", ["linear"], ["zoom"], ...stops];
+const HEAT_SOURCE = "heat";
+const TILE_MAX_ZOOM = 13;
+const layerId = (g: ActivityGroup) => `heat-${g}`;
+const apiOrigin = API_BASE_URL || window.location.origin;
+
+function tileUrl(version: string): string {
+	return `${apiOrigin}/api/heatmap/tiles/{z}/{x}/{y}.mvt?v=${encodeURIComponent(version)}`;
 }
+
+/**
+ * Cell radius in px. Tiles at zoom ≥ 9 carry the z13 cells (256px-tile
+ * pixels), which are 2^(mapZoom + 1 - 13) px wide on Mapbox's 512px tiles:
+ * 1.24 px at zoom 13, doubling per zoom. Below that every stored zoom sits
+ * under the 1.1 px floor, so the curve is flat there.
+ */
+const RADIUS: mapboxgl.Expression = [
+	"interpolate",
+	["exponential", 2],
+	["zoom"],
+	12.8,
+	1.1,
+	13,
+	0.62 * 2,
+	22,
+	0.62 * 2 ** 10,
+];
 
 // Roughly logarithmic stops: the home streets reach counts in the hundreds
 // (max 452 on 2026-09-10), a one-off holiday ride is 1.
@@ -68,23 +69,26 @@ export function HeatmapMap({
 	initialZoom,
 	visible,
 	selectedRoute,
-	onTruncated,
 }: HeatmapMapProps) {
 	const container = useRef<HTMLDivElement>(null);
 	const map = useRef<mapboxgl.Map | null>(null);
 	const [ready, setReady] = useState(false);
-	const currentStoredZoom = useRef<number>(0);
-	const fetchSeq = useRef(0);
 
 	// Create the map once. initialCenter/zoom are only read on mount.
 	useEffect(() => {
 		if (!container.current || !MAPBOX_TOKEN) return;
 		mapboxgl.accessToken = MAPBOX_TOKEN;
+		let disposed = false;
 		const m = new mapboxgl.Map({
 			container: container.current,
 			style: "mapbox://styles/mapbox/dark-v11",
 			center: initialCenter,
 			zoom: initialZoom,
+			// Tile requests go to our API, which wants the key as a header.
+			transformRequest: (url) =>
+				API_KEY && url.startsWith(`${apiOrigin}/api/`)
+					? { url, headers: { "X-API-Key": API_KEY } }
+					: { url },
 		});
 		m.addControl(
 			new mapboxgl.NavigationControl({ showCompass: false }),
@@ -95,16 +99,34 @@ export function HeatmapMap({
 			"top-left",
 		);
 		map.current = m;
+		if (import.meta.env.DEV) {
+			// Dev console handle: window.__heatmap.getSource("heat") etc.
+			(window as unknown as { __heatmap?: mapboxgl.Map }).__heatmap = m;
+			m.on("error", (e) => console.error("[heatmap] map error:", e.error));
+		}
 
-		m.on("load", () => {
+		m.on("load", async () => {
+			// The heatmap version keys the tile URLs: cached for a year, a recount
+			// (new route, rebuild) changes the URL. Fall back to a per-load key.
+			const version = await api
+				.getHeatmapStatus()
+				.then((s) => s.version)
+				.catch(() => String(Date.now()));
+			if (disposed) return;
+			m.addSource(HEAT_SOURCE, {
+				type: "vector",
+				tiles: [tileUrl(version)],
+				minzoom: 0,
+				maxzoom: TILE_MAX_ZOOM,
+			});
 			for (const g of GROUP_ORDER) {
-				m.addSource(sourceId(g), { type: "geojson", data: EMPTY });
 				m.addLayer({
-					id: sourceId(g),
+					id: layerId(g),
 					type: "circle",
-					source: sourceId(g),
+					source: HEAT_SOURCE,
+					"source-layer": g,
 					paint: {
-						"circle-radius": radiusExpression(13),
+						"circle-radius": RADIUS,
 						"circle-color": colorExpression(GROUPS[g].ramp),
 						"circle-opacity": [
 							"interpolate",
@@ -138,95 +160,12 @@ export function HeatmapMap({
 		});
 
 		return () => {
+			disposed = true;
 			m.remove();
 			map.current = null;
 			setReady(false);
 		};
 	}, []);
-
-	// Fetch cells for the viewport on every settled move, debounced.
-	useEffect(() => {
-		const m = map.current;
-		if (!m || !ready) return;
-
-		let timer: ReturnType<typeof setTimeout> | null = null;
-		const load = async () => {
-			const seq = ++fetchSeq.current;
-			const z = storedZoomFor(m.getZoom());
-			const b = m.getBounds();
-			if (!b) return;
-			const bbox: [number, number, number, number] = [
-				Math.max(-180, b.getWest()),
-				Math.max(-85, b.getSouth()),
-				Math.min(180, b.getEast()),
-				Math.min(85, b.getNorth()),
-			];
-			try {
-				const data = await api.getHeatmapCells(z, bbox);
-				if (seq !== fetchSeq.current || !map.current) return; // stale
-				if (z !== currentStoredZoom.current) {
-					currentStoredZoom.current = z;
-					for (const g of GROUP_ORDER) {
-						m.setPaintProperty(
-							sourceId(g),
-							"circle-radius",
-							radiusExpression(z),
-						);
-					}
-				}
-				// Sum counts per (group, cell): two raw types in one group (Walking
-				// and Hiking) may both have a row for the same cell.
-				const perGroup: Record<ActivityGroup, Map<number, number>> = {
-					cycling: new Map(),
-					running: new Map(),
-					walking: new Map(),
-					other: new Map(),
-				};
-				for (const [type, flat] of Object.entries(data.cells)) {
-					const bucket = perGroup[groupOf(type)];
-					for (let i = 0; i < flat.length; i += 3) {
-						const key = flat[i] * CELL_KEY + flat[i + 1];
-						bucket.set(key, (bucket.get(key) ?? 0) + flat[i + 2]);
-					}
-				}
-				for (const g of GROUP_ORDER) {
-					const features: Feature<Point>[] = [];
-					for (const [key, c] of perGroup[g]) {
-						features.push({
-							type: "Feature",
-							properties: { c },
-							geometry: {
-								type: "Point",
-								coordinates: cellCenter(
-									Math.floor(key / CELL_KEY),
-									key % CELL_KEY,
-									z,
-								),
-							},
-						});
-					}
-					const src = m.getSource(sourceId(g)) as
-						| mapboxgl.GeoJSONSource
-						| undefined;
-					src?.setData({ type: "FeatureCollection", features });
-				}
-				onTruncated?.(data.truncated);
-			} catch (err) {
-				console.error("Failed to load heatmap cells:", err);
-			}
-		};
-		const schedule = () => {
-			if (timer) clearTimeout(timer);
-			timer = setTimeout(load, 200);
-		};
-
-		m.on("moveend", schedule);
-		load();
-		return () => {
-			m.off("moveend", schedule);
-			if (timer) clearTimeout(timer);
-		};
-	}, [ready, onTruncated]);
 
 	// Group toggles.
 	useEffect(() => {
@@ -234,7 +173,7 @@ export function HeatmapMap({
 		if (!m || !ready) return;
 		for (const g of GROUP_ORDER) {
 			m.setLayoutProperty(
-				sourceId(g),
+				layerId(g),
 				"visibility",
 				visible[g] ? "visible" : "none",
 			);

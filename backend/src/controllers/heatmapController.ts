@@ -3,8 +3,10 @@ import { getPool } from "../db/pool.js";
 import {
 	getCells,
 	getStatus,
+	getTile,
 	listWorkoutsWithRoutes,
 	startRebuild,
+	TILE_MAX_ZOOM,
 	ZOOMS,
 } from "../services/heatmapService.js";
 
@@ -67,6 +69,54 @@ export async function getHeatmapCells(
 		res.status(500).json({
 			error: "Internal Server Error",
 			message: "Failed to fetch heatmap cells",
+		});
+	}
+}
+
+/**
+ * GET /api/heatmap/tiles/:z/:x/:y.mvt[?v=version] — Mapbox Vector Tile, one
+ * layer per activity group. 204 for an empty tile. Cached for a year: the
+ * dashboard puts the heatmap version from /status in the URL, so a recount
+ * changes the URL.
+ */
+export async function getHeatmapTile(
+	req: Request,
+	res: Response,
+): Promise<void> {
+	const z = Number.parseInt(String(req.params.z), 10);
+	const x = Number.parseInt(String(req.params.x), 10);
+	const y = Number.parseInt(String(req.params.y), 10);
+	const n = 2 ** z;
+	if (
+		!Number.isInteger(z) ||
+		!Number.isInteger(x) ||
+		!Number.isInteger(y) ||
+		z < 0 ||
+		z > TILE_MAX_ZOOM ||
+		x < 0 ||
+		x >= n ||
+		y < 0 ||
+		y >= n
+	) {
+		res.status(400).json({
+			error: "Bad Request",
+			message: `tile must be 0 <= z <= ${TILE_MAX_ZOOM}, 0 <= x, y < 2^z`,
+		});
+		return;
+	}
+	try {
+		const tile = await getTile(getPool(), z, x, y);
+		res.set("Cache-Control", "private, max-age=31536000, immutable");
+		if (!tile) {
+			res.status(204).end();
+			return;
+		}
+		res.type("application/vnd.mapbox-vector-tile").send(tile);
+	} catch (error) {
+		console.error("Error building heatmap tile:", error);
+		res.status(500).json({
+			error: "Internal Server Error",
+			message: "Failed to build heatmap tile",
 		});
 	}
 }
