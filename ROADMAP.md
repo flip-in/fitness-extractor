@@ -82,6 +82,9 @@ cache, routes cut off at the edges), and between map zoom 10 and 13 the z10 roll
   `BASE_ZOOM` change deploys itself); otherwise the usual reconcile. Laptop: 944 routes →
   203,868 z14 / 21,736 z11 / 1,935 z8 cells, table 39 MB (was 17), densest Amsterdam tile
   (z10) 204 KB gzip. No schema change (zoom is a column).
+- **Sidebar follows the view (user):** "In view" (default) lists workouts whose bounding box
+  touches the viewport, "All" lists everything; client-side on the bounds `/heatmap/workouts`
+  already returns, updated on `moveend`, with a route count.
 
 ---
 

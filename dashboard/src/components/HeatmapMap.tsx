@@ -12,6 +12,8 @@ interface HeatmapMapProps {
 	initialZoom: number;
 	visible: Record<ActivityGroup, boolean>;
 	selectedRoute: WorkoutRoute | null;
+	/** Called with [west, south, east, north] once loaded and after every settled move. */
+	onViewChange?: (bbox: [number, number, number, number]) => void;
 }
 
 /**
@@ -71,6 +73,7 @@ export function HeatmapMap({
 	initialZoom,
 	visible,
 	selectedRoute,
+	onViewChange,
 }: HeatmapMapProps) {
 	const container = useRef<HTMLDivElement>(null);
 	const map = useRef<mapboxgl.Map | null>(null);
@@ -168,6 +171,22 @@ export function HeatmapMap({
 			setReady(false);
 		};
 	}, []);
+
+	// Report the viewport so the sidebar can follow it.
+	useEffect(() => {
+		const m = map.current;
+		if (!m || !ready || !onViewChange) return;
+		const report = () => {
+			const b = m.getBounds();
+			if (b)
+				onViewChange([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+		};
+		m.on("moveend", report);
+		report();
+		return () => {
+			m.off("moveend", report);
+		};
+	}, [ready, onViewChange]);
 
 	// Group toggles.
 	useEffect(() => {

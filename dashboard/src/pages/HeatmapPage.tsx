@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { HeatmapMap } from "../components/HeatmapMap";
@@ -119,7 +119,28 @@ export function HeatmapPage() {
 	const toggle = (g: ActivityGroup) =>
 		setVisible((v) => ({ ...v, [g]: !v[g] }));
 
-	const listed = (workouts ?? []).filter((w) => visible[w.group]);
+	// Sidebar scope: workouts whose bounding box touches the map view (default),
+	// or every routed workout. The view arrives from the map after each move.
+	const [scope, setScope] = useState<"view" | "all">("view");
+	const [view, setView] = useState<[number, number, number, number] | null>(
+		null,
+	);
+	const onViewChange = useCallback(
+		(bbox: [number, number, number, number]) => setView(bbox),
+		[],
+	);
+	const inView = (w: HeatmapWorkout) => {
+		if (scope === "all" || !view) return true;
+		const [west, south, east, north] = view;
+		const b = w.bounds;
+		return (
+			b.min_lon <= east &&
+			b.max_lon >= west &&
+			b.min_lat <= north &&
+			b.max_lat >= south
+		);
+	};
+	const listed = (workouts ?? []).filter((w) => visible[w.group] && inView(w));
 
 	return (
 		<div className="h-screen w-screen flex bg-gray-950 text-gray-100 overflow-hidden">
@@ -130,6 +151,7 @@ export function HeatmapPage() {
 						initialZoom={start.zoom}
 						visible={visible}
 						selectedRoute={selectedRoute}
+						onViewChange={onViewChange}
 					/>
 				) : (
 					<div className="flex-1 flex items-center justify-center text-gray-400">
@@ -166,6 +188,27 @@ export function HeatmapPage() {
 								{GROUPS[g].icon} {GROUPS[g].label}
 							</button>
 						))}
+					</div>
+					<div className="mt-3 flex items-center justify-between text-xs">
+						<div className="flex rounded-full border border-gray-700 overflow-hidden">
+							{(["view", "all"] as const).map((s) => (
+								<button
+									type="button"
+									key={s}
+									onClick={() => setScope(s)}
+									className={`px-2.5 py-1 transition ${
+										scope === s
+											? "bg-gray-200 text-gray-950"
+											: "text-gray-400 hover:bg-gray-800"
+									}`}
+								>
+									{s === "view" ? "In view" : "All"}
+								</button>
+							))}
+						</div>
+						<span className="text-gray-400">
+							{workouts === null ? "" : `${listed.length} routes`}
+						</span>
 					</div>
 				</div>
 
@@ -204,7 +247,11 @@ export function HeatmapPage() {
 						);
 					})}
 					{workouts !== null && listed.length === 0 && !error && (
-						<p className="p-4 text-gray-400 text-sm">No routes to show.</p>
+						<p className="p-4 text-gray-400 text-sm">
+							{scope === "view"
+								? "No routes in view. Pan the map or switch to All."
+								: "No routes to show."}
+						</p>
 					)}
 				</div>
 			</aside>
