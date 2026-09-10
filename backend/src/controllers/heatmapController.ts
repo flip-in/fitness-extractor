@@ -75,17 +75,20 @@ export async function getHeatmapCells(
 
 /**
  * GET /api/heatmap/tiles/:z/:x/:y.mvt[?v=version] — Mapbox Vector Tile, one
- * layer per activity group. 204 for an empty tile. Cached for a year: the
- * dashboard puts the heatmap version from /status in the URL, so a recount
- * changes the URL.
+ * layer per activity group. 204 for an empty tile. With ?v= (the heatmap
+ * version from /status, which the dashboard puts in the URL so a recount or a
+ * renderer change gives a new URL) the response is cached for a year; a bare
+ * URL is not cached.
  */
+const TILE_COORD = /^\d{1,6}$/;
 export async function getHeatmapTile(
 	req: Request,
 	res: Response,
 ): Promise<void> {
-	const z = Number.parseInt(String(req.params.z), 10);
-	const x = Number.parseInt(String(req.params.x), 10);
-	const y = Number.parseInt(String(req.params.y), 10);
+	const raw = [req.params.z, req.params.x, req.params.y].map(String);
+	const [z, x, y] = raw.map((s) =>
+		TILE_COORD.test(s) ? Number(s) : Number.NaN,
+	);
 	const n = 2 ** z;
 	if (
 		!Number.isInteger(z) ||
@@ -106,7 +109,11 @@ export async function getHeatmapTile(
 	}
 	try {
 		const tile = await getTile(getPool(), z, x, y);
-		res.set("Cache-Control", "private, max-age=31536000, immutable");
+		const versioned = typeof req.query.v === "string" && req.query.v !== "";
+		res.set(
+			"Cache-Control",
+			versioned ? "private, max-age=31536000, immutable" : "no-cache",
+		);
 		if (!tile) {
 			res.status(204).end();
 			return;

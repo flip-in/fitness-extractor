@@ -184,6 +184,8 @@ check(
 )
 status, body = call("/api/heatmap/tiles/15/0/0.mvt")
 check("heatmap tile beyond max zoom -> 400", status == 400, str(status))
+status, body = call("/api/heatmap/tiles/1foo/0/0.mvt")
+check("heatmap tile non-integer coord -> 400", status == 400, str(status))
 status, body = call("/api/heatmap/workouts")
 heat_workouts = (body.get("data", {}) or {}).get("workouts") if isinstance(body, dict) else None
 check(

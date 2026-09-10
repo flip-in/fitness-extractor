@@ -15,6 +15,12 @@ import { type ActivityGroup, groupCaseSql, groupOf } from "./heatmapGroups.js";
 /** Base grid: 256px-tile pixels at zoom 14, ~6 m at 52°N (GPS accuracy is 5–10 m; finer draws noise). */
 export const BASE_ZOOM = 14;
 export const ZOOMS = [14, 11, 8] as const;
+/**
+ * Bump whenever tile *content* changes without a recount (grouping, layer
+ * layout, MVT encoding, buffer). Part of the heatmap version, so the
+ * dashboard's immutable tile URLs change on deploy.
+ */
+export const TILE_REVISION = 1;
 const TILE = 256;
 /** A segment longer than this many base cells (~40 km) is a GPS glitch, not a ride. */
 const MAX_SEGMENT_CELLS = 4000;
@@ -238,11 +244,21 @@ export async function startupRecount(pool: Pool): Promise<void> {
 	const stored = await pool.query<{ zoom: number }>(
 		"SELECT DISTINCT zoom FROM heatmap_cells",
 	);
+	const counted = await pool.query<{ n: string }>(
+		"SELECT count(*) AS n FROM heatmap_rasterized",
+	);
+	const storedZooms = stored.rows.map((r) => r.zoom);
 	const wanted = new Set<number>(ZOOMS);
-	const mismatch = stored.rows.some((r) => !wanted.has(r.zoom));
+	// Anything counted must have cells at exactly ZOOMS; a subset (a zoom
+	// truncated by hand, or an aborted rebuild) would otherwise stay empty
+	// forever because reconcile only looks at uncounted routes.
+	const mismatch =
+		Number(counted.rows[0].n) > 0 &&
+		(storedZooms.length !== wanted.size ||
+			storedZooms.some((z) => !wanted.has(z)));
 	if (mismatch) {
 		console.log(
-			`Heatmap: stored zooms ${stored.rows.map((r) => r.zoom).join(",")} != ${ZOOMS.join(",")}; rebuilding`,
+			`Heatmap: stored zooms ${storedZooms.join(",")} != ${ZOOMS.join(",")}; rebuilding`,
 		);
 	}
 	startRebuild(pool, mismatch ? "rebuild" : "reconcile");
@@ -552,7 +568,7 @@ export async function getStatus(pool: Pool): Promise<HeatmapStatus> {
 		cells_by_zoom: byZoom,
 		rasterized_workouts: Number(rasterized),
 		routes: Number(routes),
-		version: `${rasterized}-${latest ?? 0}`,
+		version: `${TILE_REVISION}-${rasterized}-${latest ?? 0}`,
 		rebuild: getRebuildState(),
 	};
 }

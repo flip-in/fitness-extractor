@@ -85,6 +85,13 @@ cache, routes cut off at the edges), and between map zoom 10 and 13 the z10 roll
 - **Sidebar follows the view (user):** "In view" (default) lists workouts whose bounding box
   touches the viewport, "All" lists everything; client-side on the bounds `/heatmap/workouts`
   already returns, updated on `moveend`, with a route count.
+- **pi review (5 findings, 4 fixed, 1 declined):** bare tile URLs (no `?v=`) were `immutable` for
+  a year → now `no-cache`, immutable only with a version; startup zoom check missed a *subset* of
+  `ZOOMS` (a truncated zoom would never refill) → rebuild whenever counted routes exist and the
+  stored zoom set ≠ `ZOOMS`; version was data-only → `TILE_REVISION` prefix (`1-<count>-<max_at>`),
+  bump when tile content changes without a recount; tile coords parsed with `parseInt` accepted
+  `1.5`/`0junk` → digits-only regex, smoke check added (24/24). Declined: sidebar "In view" across
+  the antimeridian (no routes near ±180°; "All" is the fallback). Security worker: nothing new.
 
 ---
 
