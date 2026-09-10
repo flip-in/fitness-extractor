@@ -77,6 +77,29 @@ export interface WorkoutRoute {
 	};
 }
 
+/** One workout with a GPS route, as listed in the heatmap sidebar. */
+export interface HeatmapWorkout {
+	id: string;
+	workout_type: string;
+	start_date: string;
+	duration_seconds: number;
+	total_distance_meters: number | null;
+	is_favorite: boolean;
+	bounds: {
+		min_lat: number;
+		max_lat: number;
+		min_lon: number;
+		max_lon: number;
+	};
+}
+
+/** Grid cells for one viewport: per workout type, flat [x, y, count, ...] triples. */
+export interface HeatmapCells {
+	zoom: number;
+	cells: Record<string, number[]>;
+	truncated: boolean;
+}
+
 export interface HealthMetric {
 	id: string;
 	user_id: string;

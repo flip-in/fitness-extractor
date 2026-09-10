@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { ActivityRings } from "../components/ActivityRings";
 import { WorkoutMap } from "../components/WorkoutMap";
@@ -222,9 +223,17 @@ export function Dashboard() {
 			<div className="max-w-7xl mx-auto px-4 py-8">
 				{/* Header */}
 				<header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-					<h1 className="text-4xl font-bold text-gray-900 dark:text-white">
-						Fitness Dashboard
-					</h1>
+					<div className="flex items-baseline gap-4">
+						<h1 className="text-4xl font-bold text-gray-900 dark:text-white">
+							Fitness Dashboard
+						</h1>
+						<Link
+							to="/map"
+							className="text-blue-600 dark:text-blue-400 hover:underline"
+						>
+							Heatmap →
+						</Link>
+					</div>
 					<div className="flex gap-2">
 						<button
 							type="button"

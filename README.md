@@ -182,13 +182,21 @@ fitness-extractor/
 - `GET /api/activity-rings/:date`
 - `GET /api/health-metrics/:metricType`
 
+### Heatmap (grid counts, see `backend/src/services/heatmapService.ts`)
+
+- `GET  /api/heatmap/cells?z=13|10|7&bbox=w,s,e,n[&types=Cycling,Running]`
+- `GET  /api/heatmap/workouts` (every workout with a route, for the `/map` sidebar)
+- `GET  /api/heatmap/status`
+- `POST /api/heatmap/rebuild` (recount everything from `workout_routes`; runs in the background)
+
 All require the `X-API-Key` header except `/api/health`.
 Source of truth: `backend/src/routes/*.ts` (`docs/API_SPECIFICATION.md` is the Oct 2025 plan).
 
 ## Database Schema
 
-8 tables: `workouts`, `workout_routes` (GPS as JSONB + bounding box), `health_metrics`,
+10 tables: `workouts`, `workout_routes` (GPS as JSONB + bounding box), `health_metrics`,
 `activity_rings`, `workout_annotations` (favorites; keyed on `healthkit_uuid`, no FK),
+`heatmap_cells` + `heatmap_rasterized` (derived grid counts, rebuildable),
 `sync_anchors`, `users`, `schema_migrations`.
 
 Duplicate handling is via `ON CONFLICT` — `healthkit_uuid` for workouts and metrics,

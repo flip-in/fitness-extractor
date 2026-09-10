@@ -1,4 +1,5 @@
 import type { Pool, QueryResult } from "pg";
+import { rasterizeWorkout } from "./heatmapService.js";
 
 export interface WorkoutData {
 	healthkit_uuid: string;
@@ -140,6 +141,22 @@ export async function insertWorkout(
 		}
 
 		await client.query("COMMIT");
+
+		// Count the new route into the GPS heatmap (milliseconds for one route).
+		// After the commit and outside its transaction: a heatmap failure must
+		// not fail the sync, and the iOS app has a 30s wake to get its answer.
+		if (hasRoute && workout.route) {
+			try {
+				await rasterizeWorkout(
+					pool,
+					workoutId,
+					workout.workout_type,
+					workout.route.points,
+				);
+			} catch (error) {
+				console.error(`Heatmap rasterise failed for ${workoutId}:`, error);
+			}
+		}
 
 		return {
 			success: true,

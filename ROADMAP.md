@@ -10,6 +10,37 @@ hourly observer wakes. Remaining Phase 4 chores below, then sleep/workout extras
 
 ---
 
+## 2026-09-10 — GPS heatmap as grid counts (branch `worktree-heatmap`)
+
+**Decision (user):** grid counts, not Mapbox's point heatmap (research doc Option A) — crisp
+lines, cheap page loads, one-off rasterisation instead of decoding 1.69M JSONB points per view.
+
+- **Model** (`004_heatmap.sql`): `heatmap_cells(zoom, workout_type, x, y, count)` in 256px Web
+  Mercator tile-pixel coordinates at zoom 13 (~12 m at 52°N) plus rollups at 10 and 7;
+  `heatmap_rasterized(workout_id)` records what is counted. `count` = activities through the
+  cell, deduped within an activity (a GPS stall does not glow). Raw HealthKit type per row;
+  grouping (cycling / running / walking+hiking / other) is the dashboard's.
+- **Rasteriser** (`heatmapService.ts`): project → Bresenham over consecutive points → dedupe →
+  one `INSERT … ON CONFLICT DO UPDATE count+1` per zoom (unnest arrays). Points with
+  `horizontal_accuracy` > 100 m and segments > ~40 km (glitches) are skipped. Hooked into
+  `insertWorkout` after the commit (a heatmap failure never fails a sync). `POST
+  /api/heatmap/rebuild` truncates and recounts in the background; `GET /status` shows progress.
+- **Measured on the laptop DB:** 944 routes rebuilt in 13 s; 97k cells at z13 / 10k at z10 /
+  805 at z7; 17 MB total; hottest cell 452 passes. Amsterdam-area z13 cycling query: 44.6k cells,
+  well under the 80k cap. Smoke test 19/19 (two heatmap checks added).
+- **Dashboard:** `react-router-dom` finally wired: `/` dashboard, `/map` heatmap
+  (`HeatmapPage`, `HeatmapMap`, `heatmap.ts`). Dark style, one circle layer per group (radius
+  tracks the cell footprint via exponential zoom interpolation, colour ramp by count), fetch on
+  `moveend` for the viewport at the finest stored zoom ≤ ~1 px/cell, group toggles, sidebar of
+  all routed workouts (newest first), click → white route line + fly-to. Start: browser
+  geolocation (4 s cap) → newest route → Amsterdam.
+- **Deploy notes:** migration 004 applies via the runner; then run `POST /api/heatmap/rebuild`
+  once against the NAS (curl with the API key) — the sync hook only counts routes that arrive
+  from then on. Not done: server-rendered raster tiles (true Strava look), per-type layer within
+  a group, mobile layout.
+
+---
+
 ## 2026-09-09 — the nightly task can never read HealthKit; everything rides on wakes
 
 **Found** (12h unified-log archive, morning of 09-09): the NAS had no POSTs 00:10→07:34 CEST

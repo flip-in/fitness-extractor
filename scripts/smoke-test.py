@@ -140,6 +140,25 @@ status, body = call(
 )
 check("GET /api/health-metrics/:metricType", status == 200 and bool(body), str(status))
 
+# Heatmap: whole-world cells at the coarsest zoom, and the sidebar list. Cells may be
+# empty until POST /api/heatmap/rebuild has run once on this deployment.
+status, body = call("/api/heatmap/cells?z=7&bbox=-180,-85,180,85")
+heat = body.get("data", {}) if isinstance(body, dict) else {}
+check(
+    "GET /api/heatmap/cells",
+    status == 200 and isinstance(heat.get("cells"), dict),
+    f"{sum(len(v) // 3 for v in heat.get('cells', {}).values())} cells at z7",
+)
+status, body = call("/api/heatmap/cells?z=12&bbox=0,0,1,1")
+check("heatmap unsupported zoom -> 400", status == 400, str(status))
+status, body = call("/api/heatmap/workouts")
+heat_workouts = (body.get("data", {}) or {}).get("workouts") if isinstance(body, dict) else None
+check(
+    "GET /api/heatmap/workouts",
+    status == 200 and isinstance(heat_workouts, list),
+    f"{len(heat_workouts or [])} routed workouts",
+)
+
 status, body = call("/api/dashboard/favorites")
 favs = (body.get("data", {}).get("workouts") if isinstance(body, dict) else None)
 check(

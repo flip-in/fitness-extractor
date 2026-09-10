@@ -31,6 +31,7 @@ import { getPool } from "./db/pool.js";
 import activityRingsRoutes from "./routes/activityRings.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import healthMetricsRoutes from "./routes/healthMetrics.js";
+import heatmapRoutes from "./routes/heatmap.js";
 import syncRoutes from "./routes/sync.js";
 import workoutRoutes from "./routes/workout.js";
 
@@ -65,6 +66,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/workout", workoutRoutes);
 app.use("/api/activity-rings", activityRingsRoutes);
 app.use("/api/health-metrics", healthMetricsRoutes);
+app.use("/api/heatmap", heatmapRoutes);
 
 // Health check endpoint (no auth required)
 app.get("/api/health", async (_req: Request, res: Response) => {

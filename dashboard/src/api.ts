@@ -2,6 +2,8 @@ import type {
 	ActivityRing,
 	DashboardResponse,
 	HealthMetric,
+	HeatmapCells,
+	HeatmapWorkout,
 	WorkoutDetail,
 	WorkoutRoute,
 	WorkoutSummary,
@@ -139,6 +141,27 @@ class ApiClient {
 				max_lon: Math.max(...lons),
 			},
 		};
+	}
+
+	// Heatmap endpoints
+	async getHeatmapCells(
+		zoom: number,
+		bbox: [number, number, number, number],
+		types?: string[],
+	): Promise<HeatmapCells> {
+		const params = new URLSearchParams({
+			z: String(zoom),
+			bbox: bbox.map((v) => v.toFixed(5)).join(","),
+		});
+		if (types && types.length > 0) params.set("types", types.join(","));
+		return this.request<HeatmapCells>(`/api/heatmap/cells?${params}`);
+	}
+
+	async getHeatmapWorkouts(): Promise<HeatmapWorkout[]> {
+		const data = await this.request<{ workouts: HeatmapWorkout[] }>(
+			"/api/heatmap/workouts",
+		);
+		return data.workouts;
 	}
 
 	// Activity rings endpoints
