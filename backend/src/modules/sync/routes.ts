@@ -1,12 +1,9 @@
 import express from "express";
-import {
-	getAnchor,
-	syncActivityRings,
-	syncHealthMetrics,
-	syncWorkouts,
-	updateSyncAnchors,
-} from "../controllers/syncController.js";
-import { requireApiKey } from "../middleware/auth.js";
+import { requireApiKey } from "../../middleware/auth.js";
+import { syncActivityRings } from "../activity-rings/controller.js";
+import { syncHealthMetrics } from "../health-metrics/controller.js";
+import { syncWorkouts } from "../workouts/controller.js";
+import { getAnchor, updateSyncAnchors } from "./controller.js";
 
 const router = express.Router();
 

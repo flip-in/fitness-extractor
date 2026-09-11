@@ -10,6 +10,28 @@ hourly observer wakes. Remaining Phase 4 chores below, then sleep/workout extras
 
 ---
 
+## 2026-09-11 — backend as feature modules (branch `worktree-backend-modules`)
+
+**Decision (user):** modularise by domain before adding workout extras, so sleep can later be a
+drop-in module with its own URL segment. Options weighed: keep layers + add segments (A), feature
+modules with the existing per-domain `/api/sync/*` handlers owned by each module (B, chosen), or
+per-module sync endpoints (C, rejected: more phone wakes for one device).
+
+- `backend/src/modules/<name>/{routes,controller,service}.ts` for `workouts`, `activity-rings`,
+  `health-metrics`, `dashboard`, `heatmap` (+ `groups.ts`), `sync` (anchors + wiring of the
+  modules' sync handlers under `/api/sync/*`). `shared/defaultUser.ts` holds the MVP user id.
+  Mechanical move (git mv + line ranges, no logic change): `syncController`/`dashboardController`/
+  `dashboardService` split by domain; the read-side `HealthMetricData` renamed `HealthMetricPoint`
+  (clashed with the sync input type). `/api/workout` → `/api/workouts` (dashboard, smoke, docs
+  updated; phone never used it). Smoke 24/24, tsc + biome clean.
+- Adding a module = one folder + `app.use` in `index.ts` (+ one line in `modules/sync/routes.ts`
+  if the phone syncs it). Heatmap stays its own module, depending on workouts via
+  `rasterizeWorkout`.
+- **Next:** workout extras (events / activities / statistics) as JSONB on `workouts` first; time
+  series later after checking whether `health_metrics` already carries workout-time HR.
+
+---
+
 ## 2026-09-10 — GPS heatmap as grid counts (branch `worktree-heatmap`)
 
 **Decision (user):** grid counts, not Mapbox's point heatmap (research doc Option A) — crisp

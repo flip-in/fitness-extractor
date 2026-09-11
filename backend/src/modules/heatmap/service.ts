@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { fromGeojsonVt } from "vt-pbf";
-import { type ActivityGroup, groupCaseSql, groupOf } from "./heatmapGroups.js";
+import { type ActivityGroup, groupCaseSql, groupOf } from "./groups.js";
 
 /**
  * GPS heatmap as grid counts. See migrations/004_heatmap.sql for the model.

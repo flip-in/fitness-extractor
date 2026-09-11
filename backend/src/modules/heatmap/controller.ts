@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
-import { getPool } from "../db/pool.js";
+import { getPool } from "../../db/pool.js";
+import { DEFAULT_USER_ID } from "../../shared/defaultUser.js";
 import {
 	getCells,
 	getStatus,
@@ -8,9 +9,7 @@ import {
 	startRebuild,
 	TILE_MAX_ZOOM,
 	ZOOMS,
-} from "../services/heatmapService.js";
-
-const DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000001";
+} from "./service.js";
 
 /**
  * GET /api/heatmap/cells?z=14&bbox=west,south,east,north[&types=Cycling,Running]

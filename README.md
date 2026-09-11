@@ -177,8 +177,8 @@ fitness-extractor/
 ### Dashboard (backend → web)
 
 - `GET /api/dashboard/recent`
-- `GET /api/workout/:id`
-- `GET /api/workout/:id/route`
+- `GET /api/workouts/:id`
+- `GET /api/workouts/:id/route`
 - `GET /api/activity-rings/:date`
 - `GET /api/health-metrics/:metricType`
 

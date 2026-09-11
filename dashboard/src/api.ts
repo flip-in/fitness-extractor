@@ -98,14 +98,14 @@ class ApiClient {
 
 	// Workout endpoints
 	async getWorkout(id: string): Promise<WorkoutDetail> {
-		return this.request<WorkoutDetail>(`/api/workout/${id}`);
+		return this.request<WorkoutDetail>(`/api/workouts/${id}`);
 	}
 
 	async setWorkoutFavorite(
 		id: string,
 		isFavorite: boolean,
 	): Promise<{ id: string; is_favorite: boolean }> {
-		return this.request(`/api/workout/${id}/favorite`, {
+		return this.request(`/api/workouts/${id}/favorite`, {
 			method: "PUT",
 			body: JSON.stringify({ is_favorite: isFavorite }),
 		});
@@ -113,7 +113,7 @@ class ApiClient {
 
 	async getWorkoutRoute(id: string): Promise<WorkoutRoute> {
 		const response = await this.request<RawWorkoutRoute>(
-			`/api/workout/${id}/route`,
+			`/api/workouts/${id}/route`,
 		);
 
 		// Transform backend format to frontend format

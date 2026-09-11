@@ -1,4 +1,5 @@
 import express from "express";
+import { requireApiKey } from "../../middleware/auth.js";
 import {
 	getHeatmapCells,
 	getHeatmapStatus,
@@ -6,8 +7,7 @@ import {
 	getHeatmapWorkouts,
 	rebuildHeatmap,
 	reconcileHeatmap,
-} from "../controllers/heatmapController.js";
-import { requireApiKey } from "../middleware/auth.js";
+} from "./controller.js";
 
 const router = express.Router();
 

@@ -239,7 +239,7 @@ See detailed API spec in `docs/API_SPECIFICATION.md`
 - `POST /api/sync/activity-rings` - Sync activity rings
 - `POST /api/sync/import-historical` - Historical data import
 - `GET /api/dashboard/recent` - Get last 7 days data
-- `GET /api/workout/:id/route` - Get GPS route for workout
+- `GET /api/workouts/:id/route` - Get GPS route for workout
 
 ---
 

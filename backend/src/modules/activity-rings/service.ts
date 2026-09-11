@@ -94,3 +94,79 @@ export async function upsertActivityRing(
 		client.release();
 	}
 }
+
+export interface ActivityRing {
+	date: string;
+	move_goal_kcal: number;
+	move_actual_kcal: number;
+	move_percent: number;
+	exercise_goal_minutes: number;
+	exercise_actual_minutes: number;
+	exercise_percent: number;
+	stand_goal_hours: number;
+	stand_actual_hours: number;
+	stand_percent: number;
+}
+
+/**
+ * Get recent activity rings (last N days)
+ */
+export async function getRecentActivityRings(
+	pool: Pool,
+	userId: string,
+	days: number,
+): Promise<ActivityRing[]> {
+	const query = `
+		SELECT
+			date,
+			move_goal_kcal,
+			move_actual_kcal,
+			move_percent,
+			exercise_goal_minutes,
+			exercise_actual_minutes,
+			exercise_percent,
+			stand_goal_hours,
+			stand_actual_hours,
+			stand_percent
+		FROM activity_rings
+		WHERE user_id = $1
+		AND date >= CURRENT_DATE - INTERVAL '1 day' * $2
+		ORDER BY date DESC
+	`;
+
+	const result = await pool.query(query, [userId, days]);
+	return result.rows;
+}
+
+/**
+ * Get activity rings for a specific date
+ */
+export async function getActivityRingsByDate(
+	pool: Pool,
+	userId: string,
+	date: string,
+): Promise<ActivityRing | null> {
+	const query = `
+		SELECT
+			date,
+			move_goal_kcal,
+			move_actual_kcal,
+			move_percent,
+			exercise_goal_minutes,
+			exercise_actual_minutes,
+			exercise_percent,
+			stand_goal_hours,
+			stand_actual_hours,
+			stand_percent
+		FROM activity_rings
+		WHERE user_id = $1 AND date = $2
+	`;
+
+	const result = await pool.query(query, [userId, date]);
+
+	if (result.rows.length === 0) {
+		return null;
+	}
+
+	return result.rows[0];
+}

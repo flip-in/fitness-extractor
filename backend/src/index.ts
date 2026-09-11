@@ -29,13 +29,13 @@ import express, {
 	type Response,
 } from "express";
 import { getPool } from "./db/pool.js";
-import activityRingsRoutes from "./routes/activityRings.js";
-import dashboardRoutes from "./routes/dashboard.js";
-import healthMetricsRoutes from "./routes/healthMetrics.js";
-import heatmapRoutes from "./routes/heatmap.js";
-import syncRoutes from "./routes/sync.js";
-import workoutRoutes from "./routes/workout.js";
-import { startupRecount } from "./services/heatmapService.js";
+import activityRingsRoutes from "./modules/activity-rings/routes.js";
+import dashboardRoutes from "./modules/dashboard/routes.js";
+import healthMetricsRoutes from "./modules/health-metrics/routes.js";
+import heatmapRoutes from "./modules/heatmap/routes.js";
+import { startupRecount } from "./modules/heatmap/service.js";
+import syncRoutes from "./modules/sync/routes.js";
+import workoutRoutes from "./modules/workouts/routes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -72,10 +72,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use(express.json({ limit: "50mb" })); // Parse JSON bodies, limit to 50MB for GPS routes
 
-// Routes
+// Routes: one segment per module (src/modules/<name>/routes.ts). The phone's
+// /api/sync/* handlers live in their modules too; modules/sync only wires them.
 app.use("/api/sync", syncRoutes);
 app.use("/api/dashboard", dashboardRoutes);
-app.use("/api/workout", workoutRoutes);
+app.use("/api/workouts", workoutRoutes);
 app.use("/api/activity-rings", activityRingsRoutes);
 app.use("/api/health-metrics", healthMetricsRoutes);
 app.use("/api/heatmap", heatmapRoutes);

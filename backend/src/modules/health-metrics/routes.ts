@@ -1,6 +1,6 @@
 import express from "express";
-import { getHealthMetrics } from "../controllers/dashboardController.js";
-import { requireApiKey } from "../middleware/auth.js";
+import { requireApiKey } from "../../middleware/auth.js";
+import { getHealthMetrics } from "./controller.js";
 
 const router = express.Router();
 

@@ -104,10 +104,10 @@ check(
 )
 
 if wid:
-    status, body = call(f"/api/workout/{wid}")
-    check("GET /api/workout/:id", status == 200 and bool(body), str(status))
+    status, body = call(f"/api/workouts/{wid}")
+    check("GET /api/workouts/:id", status == 200 and bool(body), str(status))
 else:
-    check("GET /api/workout/:id", ALLOW_EMPTY, "no workouts to test against")
+    check("GET /api/workouts/:id", ALLOW_EMPTY, "no workouts to test against")
 
 if DASHBOARD:
     req = urllib.request.Request(BASE + "/")
@@ -121,11 +121,11 @@ if DASHBOARD:
     check("GET / serves dashboard (SPA)", ok, detail)
 
 if wid_route:
-    status, body = call(f"/api/workout/{wid_route}/route")
+    status, body = call(f"/api/workouts/{wid_route}/route")
     route = (body.get("route") if isinstance(body, dict) else None) or {}
     pts = route.get("points") or []
     check(
-        "GET /api/workout/:id/route (nested param)",
+        "GET /api/workouts/:id/route (nested param)",
         status == 200 and len(pts) > 0,
         f"{len(pts)} points",
     )
@@ -206,17 +206,17 @@ if wid:
     # Re-assert the current flag: exercises the write path without changing state.
     current = bool(workouts[0].get("is_favorite"))
     status, body = call(
-        f"/api/workout/{wid}/favorite", method="PUT", body={"is_favorite": current}
+        f"/api/workouts/{wid}/favorite", method="PUT", body={"is_favorite": current}
     )
     check(
-        "PUT /api/workout/:id/favorite (idempotent)",
+        "PUT /api/workouts/:id/favorite (idempotent)",
         status == 200 and isinstance(body, dict) and body.get("success") is True,
         str(status),
     )
-    status, _ = call(f"/api/workout/{wid}/favorite", method="PUT", body={"is_favorite": "yes"})
+    status, _ = call(f"/api/workouts/{wid}/favorite", method="PUT", body={"is_favorite": "yes"})
     check("non-boolean is_favorite -> 400", status == 400, str(status))
 else:
-    check("PUT /api/workout/:id/favorite", ALLOW_EMPTY, "no workouts to test against")
+    check("PUT /api/workouts/:id/favorite", ALLOW_EMPTY, "no workouts to test against")
 
 status, body = call(f"/api/sync/anchors/{USER}/workouts")
 check(

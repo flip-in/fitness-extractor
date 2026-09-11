@@ -183,3 +183,57 @@ export async function insertHealthMetric(
 		client.release();
 	}
 }
+
+/** One sample as returned by GET /api/health-metrics/:metricType. */
+export interface HealthMetricPoint {
+	value: number;
+	start_date: string;
+	end_date: string;
+	source_name: string | null;
+}
+
+/**
+ * Get health metrics of a specific type within a date range
+ */
+export async function getHealthMetricsByType(
+	pool: Pool,
+	userId: string,
+	metricType: string,
+	startDate: string,
+	endDate: string,
+): Promise<{ unit: string; data: HealthMetricPoint[] }> {
+	const query = `
+		SELECT
+			value,
+			unit,
+			start_date,
+			end_date,
+			source_name
+		FROM health_metrics
+		WHERE user_id = $1
+		AND metric_type = $2
+		AND start_date >= $3
+		AND start_date <= $4
+		ORDER BY start_date ASC
+	`;
+
+	const result = await pool.query(query, [
+		userId,
+		metricType,
+		startDate,
+		endDate,
+	]);
+
+	// Get unit from first row, or default to empty string
+	const unit = result.rows.length > 0 ? result.rows[0].unit : "";
+
+	return {
+		unit,
+		data: result.rows.map((row) => ({
+			value: row.value,
+			start_date: row.start_date,
+			end_date: row.end_date,
+			source_name: row.source_name,
+		})),
+	};
+}

@@ -1,9 +1,9 @@
 import express from "express";
+import { requireApiKey } from "../../middleware/auth.js";
 import {
 	getFavoriteWorkoutList,
 	getRecentDashboardData,
-} from "../controllers/dashboardController.js";
-import { requireApiKey } from "../middleware/auth.js";
+} from "./controller.js";
 
 const router = express.Router();
 

@@ -366,7 +366,7 @@ GET /api/dashboard/recent?days=7
 
 ---
 
-### GET /api/workout/:id
+### GET /api/workouts/:id
 
 Get detailed workout information.
 
@@ -406,7 +406,7 @@ Get detailed workout information.
 
 ---
 
-### GET /api/workout/:id/route
+### GET /api/workouts/:id/route
 
 Get GPS route data for a workout.
 
@@ -738,7 +738,7 @@ Response:
 **2. User clicks on a workout with a route:**
 
 ```http
-GET /api/workout/workout-uuid/route
+GET /api/workouts/workout-uuid/route
 X-API-Key: your-api-key
 ```
 
